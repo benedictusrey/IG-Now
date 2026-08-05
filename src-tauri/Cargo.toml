@@ -1,0 +1,29 @@
+[package]
+name = "ig-now"
+version = "1.0.0"
+description = "IG-Now Desktop Client"
+authors = ["Benedictus"]
+edition = "2021"
+
+[lib]
+name = "ig_now_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "IG-Now"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "devtools"] }
+tauri-plugin-shell = "2"
+tokio = { version = "1", features = ["full"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

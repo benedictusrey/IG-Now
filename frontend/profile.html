@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IG-Now — Loading Instagram...</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: linear-gradient(135deg, #405de6 0%, #833ab4 30%, #c13584 60%, #e1306c 80%, #fcaf45 100%);
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .loader {
+      text-align: center;
+      color: white;
+    }
+    .camera {
+      font-size: 56px;
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1);    opacity: 1;   }
+      50%       { transform: scale(1.1); opacity: 0.85; }
+    }
+  </style>
+</head>
+<body>
+  <div class="loader">
+    <div class="camera">📸</div>
+  </div>
+  <script>
+    // Redirect to Instagram immediately — on_navigation(|_| true) allows this
+    window.location.replace('https://www.instagram.com/');
+  </script>
+</body>
+</html>

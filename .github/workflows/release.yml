@@ -1,0 +1,105 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ── Windows ─────────────────────────────────────────────────────────
+          - platform: windows-latest
+            args: ''
+            name: Windows (x64)
+
+          # ── macOS (Apple Silicon) ────────────────────────────────────────────
+          - platform: macos-latest
+            args: '--target aarch64-apple-darwin'
+            name: macOS (Apple Silicon)
+
+          # ── macOS (Intel) ────────────────────────────────────────────────────
+          - platform: macos-latest
+            args: '--target x86_64-apple-darwin'
+            name: macOS (Intel)
+
+          # ── Linux (x64) ──────────────────────────────────────────────────────
+          - platform: ubuntu-22.04
+            args: ''
+            name: Linux (x64)
+
+    runs-on: ${{ matrix.platform }}
+    name: Build · ${{ matrix.name }}
+
+    steps:
+      # ── Checkout ─────────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Linux system dependencies ─────────────────────────────────────────────
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      # ── Node.js ───────────────────────────────────────────────────────────────
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # ── Rust ──────────────────────────────────────────────────────────────────
+      - name: Setup Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # macOS cross-compile targets
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      # ── Rust cache ────────────────────────────────────────────────────────────
+      - name: Cache Rust build artefacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      # ── Build & publish ───────────────────────────────────────────────────────
+      - name: Build and release with Tauri
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'IG-Now ${{ github.ref_name }}'
+          releaseBody: |
+            ## What's new in ${{ github.ref_name }}
+
+            See the assets below to download and install IG-Now for your platform.
+
+            ### Platform installers
+            | Platform | File |
+            |---|---|
+            | Windows 10 / 11 | `IG-Now_*_x64-setup.exe` or `IG-Now_*_x64_en-US.msi` |
+            | macOS (Apple Silicon) | `IG-Now_*_aarch64.dmg` |
+            | macOS (Intel) | `IG-Now_*_x64.dmg` |
+            | Linux (AppImage) | `IG-Now_*_amd64.AppImage` |
+            | Linux (Debian/Ubuntu) | `IG-Now_*_amd64.deb` |
+            | Linux (RPM) | `IG-Now_*_x86_64.rpm` |
+
+            > **Windows users:** Install [Edge WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) before running the app if it is not already present.
+            >
+            > **macOS users:** On first launch, right-click the app → **Open** to allow an unsigned build.
+            >
+            > **Linux users:** The AppImage is self-contained. For `.deb`/`.rpm` packages, `libwebkit2gtk-4.1` must be available on your system.
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

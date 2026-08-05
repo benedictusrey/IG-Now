@@ -1,0 +1,21 @@
+# Rust build output
+/src-tauri/target/
+
+# JavaScript dependencies and local tooling
+/node_modules/
+/.npm/
+
+# IDE and editor files
+/.idea/
+/.vscode/
+*.code-workspace
+
+# Local environment and machine-specific files
+.env
+.env.*
+*.local
+*.log
+
+# Windows/macOS metadata
+Thumbs.db
+.DS_Store
