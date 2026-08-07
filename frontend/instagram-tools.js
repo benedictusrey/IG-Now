@@ -768,6 +768,8 @@
       }
     }, 5000);
   }
+  // Exposed for Rust-side evals (tray menu feedback, watchdog reports).
+  window.showToast = showToast;
 
   async function saveBytesInApp(buffer, kind) {
     if (typeof invoke !== "function") throw new Error("IG-Now native bridge is unavailable.");
@@ -1460,6 +1462,130 @@
       scheduleScan();
     }, 500);
   }
+
+  // ── Pause-on-minimize / resume-on-restore helpers ────────────────────────
+  // Driven by the Rust playback watchdog: it evals `__onWindowHidden` on every
+  // hidden/visible transition of the host window (minimize, close-to-tray,
+  // autostart-hidden) and `__resumeIfNeeded` on restore. Idempotent — the
+  // visibilitychange handler below just mirrors the watchdog for pages where
+  // the event DOES fire. The OS-level audio-session mute in Rust is the real
+  // guarantee; these helpers give instant response and keep the site's own
+  // player state in sync.
+  var _ignowResumeOnVisible = false;
+  var _ignowPlayingVideo = null;
+  var _ignowPlayingAudio = null;
+  var _ignowMutedVideo = null;
+  var _ignowMutedByHide = false;
+
+  window.__ignowActiveVideo = function () {
+    if (state.activeVideo && state.activeVideo.isConnected) return state.activeVideo;
+    const playing = Array.from(document.querySelectorAll("video")).find(v => !v.paused);
+    return playing || document.querySelector("video") || null;
+  };
+
+  window.__onWindowHidden = function () {
+    try {
+      const videos = Array.from(document.querySelectorAll("video"));
+      const audios = Array.from(document.querySelectorAll("audio"));
+      const newlyPlaying = videos.find(v => !v.paused) || null;
+      const newlyPlayingAudio = audios.find(a => !a.paused) || null;
+      // Idempotent: the Resized fast-path AND the watchdog both call this on
+      // one minimize — a second call must NEVER clear the first capture, or
+      // restore would lose the resume intent (observed in E2E).
+      if (newlyPlaying) _ignowPlayingVideo = newlyPlaying;
+      if (newlyPlayingAudio) _ignowPlayingAudio = newlyPlayingAudio;
+      _ignowResumeOnVisible = _ignowResumeOnVisible
+        || Boolean(_ignowPlayingVideo)
+        || Boolean(_ignowPlayingAudio);
+      // Mute-backup applies ONLY to the video that was actually playing —
+      // never to a paused element (a stale mute would silence a later
+      // autoplay after restore). The OS session mute covers everything else.
+      if (_ignowPlayingVideo && !_ignowMutedVideo) {
+        _ignowMutedByHide = _ignowPlayingVideo.muted;
+        _ignowMutedVideo = _ignowPlayingVideo;
+        _ignowMutedVideo.muted = true; // instant silence; the OS session mute is the guarantee
+      }
+      videos.forEach(v => { if (!v.paused) v.pause(); });
+      audios.forEach(a => { if (!a.paused) a.pause(); });
+      return "paused";
+    } catch (error) {
+      console.warn("IG-Now pause-on-hide failed:", error);
+      return "error";
+    }
+  };
+
+  window.__resumeIfNeeded = function () {
+    try {
+      // 1. Always restore our own mute-backup on the exact element we muted —
+      // independent of any resume decision below. Restores the ORIGINAL mute
+      // state (we forced it to true at hide; undo that even if it was false).
+      if (_ignowMutedVideo && _ignowMutedVideo.isConnected) {
+        _ignowMutedVideo.muted = _ignowMutedByHide;
+      }
+      _ignowMutedVideo = null;
+      _ignowMutedByHide = false;
+      if (!_ignowResumeOnVisible) return "no-resume";
+      _ignowResumeOnVisible = false;
+
+      // 2. Resume following Instagram's own rules: only media that is still
+      // ON SCREEN may play. Prefer the exact element that was playing; if it
+      // is gone or scrolled away, hand control to the current in-view video
+      // (Instagram's engine autoplays in-view media — we only nudge it, and
+      // never fight it by replaying off-screen elements).
+      const wasPlaying = _ignowPlayingVideo && _ignowPlayingVideo.isConnected
+        ? _ignowPlayingVideo
+        : null;
+      _ignowPlayingVideo = null;
+      const target = (wasPlaying && isVisible(wasPlaying) && isVideoOnScreen(wasPlaying))
+        ? wasPlaying
+        : (visibleVideos()[0] || null);
+      if (!target) {
+        if (_ignowPlayingAudio && _ignowPlayingAudio.isConnected) {
+          _ignowPlayingAudio.play().catch(() => {});
+          _ignowPlayingAudio = null;
+          return "resumed-audio";
+        }
+        _ignowPlayingAudio = null;
+        return "no-video";
+      }
+      _ignowPlayingAudio = null;
+      applyDefaultVideoAudio(target);
+      if (!isSearchCardVideo(target)) activateVideoAudio(target);
+      target.play().catch(() => {});
+      return "resumed";
+    } catch (error) {
+      console.warn("IG-Now resume-on-restore failed:", error);
+      return "error";
+    }
+  };
+
+  window.__ignowPauseReport = function () {
+    try {
+      const videos = Array.from(document.querySelectorAll("video"));
+      const playing = videos.filter(v => !v.paused);
+      const active = window.__ignowActiveVideo();
+      return JSON.stringify({
+        paused: videos.length > 0 && playing.length === 0,
+        playing: playing.length,
+        total: videos.length,
+        activePaused: active ? active.paused : null,
+        muted: active ? active.muted : null,
+        volume: active ? active.volume : null,
+        resumeFlag: _ignowResumeOnVisible
+      });
+    } catch (error) {
+      return JSON.stringify({ error: String(error) });
+    }
+  };
+
+  document.addEventListener("visibilitychange", () => {
+    try {
+      if (document.hidden) window.__onWindowHidden();
+      else window.__resumeIfNeeded();
+    } catch (error) {
+      console.warn("IG-Now visibility handler failed:", error);
+    }
+  });
 
   if (document.documentElement) observeVideoChanges();
   else document.addEventListener("DOMContentLoaded", observeVideoChanges, { once: true });

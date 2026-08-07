@@ -1,3 +1,5 @@
+#[cfg(windows)]
+mod audio;
 mod tray;
 
 use std::{
@@ -5,6 +7,7 @@ use std::{
     io::Read,
     path::PathBuf,
     process::Command,
+    sync::atomic::{AtomicBool, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -13,6 +16,10 @@ use tauri_plugin_shell::ShellExt;
 
 const INSTAGRAM_WINDOW_LABEL: &str = "instagram";
 const INSTAGRAM_HELPER_SCRIPT: &str = include_str!("../../frontend/instagram-tools.js");
+
+/// Guards the playback watchdog so it is spawned exactly once per process,
+/// no matter how many times the Instagram window is (re)launched.
+static WATCHDOG_STARTED: AtomicBool = AtomicBool::new(false);
 
 fn instagram_data_directory(app: &AppHandle) -> Result<PathBuf, String> {
     // Keep the existing Personal WebView2 data directory so removing the
@@ -27,16 +34,166 @@ fn is_safe_http_url(url: &str) -> bool {
     (url.starts_with("https://") || url.starts_with("http://")) && !url.contains(['\r', '\n'])
 }
 
-pub fn launch_instagram_internal(app: &AppHandle) -> Result<(), String> {
+/// JS that pauses everything via the page helpers and returns a diagnostics report.
+const PAUSE_JS: &str = r#"(function(){
+    if (window.__onWindowHidden) window.__onWindowHidden();
+    return window.__ignowPauseReport ? window.__ignowPauseReport() : 'no-report';
+})()"#;
+
+/// JS that returns the current page-state diagnostics (for re-checks).
+/// NOTE: must be an IIFE — WebView2's ExecuteScript rejects top-level `return`.
+const REPORT_JS: &str = r#"(function(){
+    // Pick the AUDIBLE video: the tools' active video, else the first
+    // currently-playing one, else the first video element. Sampling only the
+    // first element was misleading — Instagram preloads neighbor videos, and
+    // the first element may not be the one that is actually playing.
+    var _pickVideo = function() {
+        var v = (window.__ignowActiveVideo && window.__ignowActiveVideo()) || null;
+        if (!v) {
+            var vs = document.querySelectorAll('video');
+            for (var i = 0; i < vs.length; i++) { if (!vs[i].paused) { v = vs[i]; break; } }
+            v = v || vs[0] || null;
+        }
+        return v;
+    };
+    return JSON.stringify({
+        url: location.href,
+        title: document.title,
+        ready: document.readyState,
+        hasPause: typeof window.__onWindowHidden,
+        hasResume: typeof window.__resumeIfNeeded,
+        hasReport: typeof window.__ignowPauseReport,
+        hasToast: typeof window.showToast,
+        media: document.querySelectorAll('video, audio').length,
+        mediaMuted: (function(){ var v = _pickVideo(); return v ? v.muted : null; })(),
+        mediaVolume: (function(){ var v = _pickVideo(); return v ? v.volume : null; })(),
+        mediaPaused: (function(){ var v = _pickVideo(); return v ? v.paused : null; })()
+    });
+})()"#;
+
+/// Pause playback when the window becomes hidden/minimized. Layered:
+/// page-side pause (in `__onWindowHidden`), then a hard mute of this app's
+/// Windows audio sessions as a guarantee.
+fn pause_media_for_hidden(w: &tauri::WebviewWindow) {
+    let _ = w.eval_with_callback(PAUSE_JS, |report| {
+        eprintln!("[IG-Now] Watchdog pause report: {}", report);
+    });
+    // Re-check a moment later: if the player engine re-played it, the report
+    // will show it (and the OS-level session mute still guarantees silence).
+    let w2 = w.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(2500));
+        let _ = w2.eval_with_callback(REPORT_JS, |report| {
+            eprintln!("[IG-Now] Watchdog recheck: {}", report);
+        });
+    });
+    #[cfg(windows)]
+    if audio::set_app_audio_mute(true) {
+        eprintln!("[IG-Now] Watchdog: audio sessions muted");
+    } else {
+        eprintln!("[IG-Now] Watchdog: no audio session found to mute");
+    }
+}
+
+/// Resume playback when the window becomes visible again.
+fn resume_media_for_visible(w: &tauri::WebviewWindow) {
+    let _ = w.eval("if (window.__resumeIfNeeded) window.__resumeIfNeeded();");
+    let _ = w.eval_with_callback(REPORT_JS, |report| {
+        eprintln!("[IG-Now] Watchdog visible report: {}", report);
+    });
+    #[cfg(windows)]
+    if audio::set_app_audio_mute(false) {
+        eprintln!("[IG-Now] Watchdog: audio sessions unmuted");
+    }
+}
+
+/// Playback watchdog for the Instagram window.
+///
+/// Some WebView2/WebKit builds never fire `visibilitychange` (or a resize
+/// event) for a minimized window, so the page would keep playing audio in the
+/// background. This thread polls the REAL window state and drives the page
+/// helpers on every hidden/visible transition. Cheap: two state reads every
+/// 800 ms, and the page eval only runs on a state CHANGE.
+fn watch_instagram_window(w: tauri::WebviewWindow) {
+    // Fail-safe direction: if a state query errors (e.g. the window was
+    // destroyed), treat the window as HIDDEN so playback gets paused.
+    let state_hidden = || w.is_minimized().unwrap_or(true) || !w.is_visible().unwrap_or(false);
+    let mut last_hidden = state_hidden();
+    #[cfg(windows)]
+    let mut unmute_ticks = 0u32;
+    #[cfg(windows)]
+    let mut startup_unmuted = false;
+    let mut startup_ticks = 0u32;
+    let mut startup_reported = false;
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(800));
+        let hidden = state_hidden();
+        // Windows PERSISTS a session's mute state across app restarts
+        // (per-app Volume Mixer store). If the previous session exited while
+        // muted (pause-on-minimize), this cold start would begin OS-muted —
+        // with no hidden/visible transition ever firing, nothing would unmute
+        // it and the app would be silent while the page plays fine. Retry the
+        // unmute until a session actually exists (the WebView2 session appears
+        // seconds after launch), capped at ~48 s. (Windows-only: audio.rs /
+        // Core Audio is cfg(windows).)
+        #[cfg(windows)]
+        {
+            if !startup_unmuted {
+                unmute_ticks += 1;
+                if unmute_ticks >= 3 && !hidden {
+                    if audio::set_app_audio_mute(false) {
+                        startup_unmuted = true;
+                        eprintln!("[IG-Now] Watchdog: startup unmute (cleared persisted session mute)");
+                        // Immediate evidence: session state right after clearing.
+                        audio::report_audio_state();
+                    } else if unmute_ticks >= 60 {
+                        startup_unmuted = true; // no session appeared — nothing to clear
+                        eprintln!("[IG-Now] Watchdog: startup unmute gave up (no session appeared)");
+                    }
+                }
+            }
+        }
+        if hidden && !last_hidden {
+            eprintln!("[IG-Now] Watchdog: window hidden -> pausing media");
+            pause_media_for_hidden(&w);
+        } else if !hidden && last_hidden {
+            eprintln!("[IG-Now] Watchdog: window visible -> resuming media");
+            resume_media_for_visible(&w);
+        }
+        last_hidden = hidden;
+        // Cold-start diagnostic: ~20 s after launch, with no hidden/visible
+        // transition yet, dump the TRUE fresh-launch page state (muted?
+        // volume?) — the E2E evidence that the startup audio defaults hold
+        // BEFORE any minimize/restore cycle.
+        if !startup_reported {
+            if hidden {
+                startup_reported = true; // a transition happened first; skip
+            } else {
+                startup_ticks += 1;
+                if startup_ticks >= 25 {
+                    startup_reported = true;
+                    let _ = w.eval_with_callback(REPORT_JS, |report| {
+                        eprintln!("[IG-Now] Watchdog startup report: {}", report);
+                    });
+                    // OS-level evidence: session mute + master volume.
+                    #[cfg(windows)]
+                    audio::report_audio_state();
+                }
+            }
+        }
+    }
+}
+
+pub fn launch_instagram_internal(app: &AppHandle, start_minimized: bool) -> Result<(), String> {
     let profile_data_dir = instagram_data_directory(app)?;
     fs::create_dir_all(&profile_data_dir).map_err(|error| error.to_string())?;
 
     if let Some(window) = app.get_webview_window(INSTAGRAM_WINDOW_LABEL) {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
-        if let Some(hub) = app.get_webview_window("main") {
-            let _ = hub.hide();
+        // Autostart (`--minimized`) never pops a window over the user's work.
+        if !start_minimized {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
         }
         return Ok(());
     }
@@ -52,6 +209,7 @@ pub fn launch_instagram_internal(app: &AppHandle) -> Result<(), String> {
     .min_inner_size(900.0, 680.0)
     .resizable(true)
     .center()
+    .visible(!start_minimized)
     .data_directory(profile_data_dir)
     .initialization_script(INSTAGRAM_HELPER_SCRIPT)
     .on_new_window(move |url, _features| {
@@ -64,21 +222,21 @@ pub fn launch_instagram_internal(app: &AppHandle) -> Result<(), String> {
     .build()
     .map_err(|error| error.to_string())?;
 
-    window.unminimize().map_err(|error| error.to_string())?;
-    window.show().map_err(|error| error.to_string())?;
-    window.set_focus().map_err(|error| error.to_string())?;
-    if let Some(hub) = app.get_webview_window("main") {
-        let _ = hub.hide();
+    if !start_minimized {
+        window.unminimize().map_err(|error| error.to_string())?;
+        window.show().map_err(|error| error.to_string())?;
+        window.set_focus().map_err(|error| error.to_string())?;
+    }
+
+    // Start the playback watchdog exactly once for this window. It polls the
+    // REAL window state (minimized/visible) and applies the layered pause /
+    // resume on transitions, plus the Windows session unmute retry.
+    if !WATCHDOG_STARTED.swap(true, Ordering::Relaxed) {
+        let w = window.clone();
+        std::thread::spawn(move || watch_instagram_window(w));
     }
 
     Ok(())
-}
-
-#[tauri::command]
-fn hide_about(app: AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.hide();
-    }
 }
 
 #[tauri::command]
@@ -153,7 +311,9 @@ async fn download_media(
         .unwrap_or_else(|| "https://www.instagram.com/".to_string());
 
     tokio::task::spawn_blocking(move || -> Result<String, String> {
-        let status = Command::new("curl.exe")
+        // Windows ships `curl.exe`; macOS/Linux use the system `curl`.
+        let curl = if cfg!(windows) { "curl.exe" } else { "curl" };
+        let status = Command::new(curl)
             .args([
                 "--fail",
                 "--location",
@@ -174,11 +334,11 @@ async fn download_media(
             .arg(&target_path)
             .arg(&url)
             .status()
-            .map_err(|error| format!("Unable to start curl.exe: {error}"))?;
+            .map_err(|error| format!("Unable to start {curl}: {error}"))?;
 
         if !status.success() {
             let _ = fs::remove_file(&target_path);
-            return Err(format!("curl.exe exited with status {status}"));
+            return Err(format!("{curl} exited with status {status}"));
         }
 
         let metadata = fs::metadata(&target_path).map_err(|error| error.to_string())?;
@@ -237,8 +397,13 @@ async fn save_media_bytes(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        // Launch-on-startup support; the app reads the `--minimized` argument
+        // itself and starts hidden to the tray (autostart never pops a window).
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec!["--minimized"]),
+        ))
         .invoke_handler(tauri::generate_handler![
-            hide_about,
             open_external_url,
             prepare_download_folder,
             download_media,
@@ -249,31 +414,41 @@ pub fn run() {
                 eprintln!("[IG-Now] Tray setup failed: {error}");
             }
 
-            let _hub = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                .title("IG-Now")
-                .inner_size(500.0, 650.0)
-                .resizable(false)
-                .shadow(true)
-                .visible(false)
-                .center()
-                .build()
-                .expect("Failed to build IG-Now main window");
+            // Launch hidden to tray when started by the OS autostart feature.
+            let start_minimized = std::env::args().any(|arg| arg == "--minimized");
 
-            if let Err(error) = launch_instagram_internal(app.handle()) {
+            if let Err(error) = launch_instagram_internal(app.handle(), start_minimized) {
                 eprintln!("[IG-Now] Failed to launch Instagram: {error}");
             }
 
             Ok(())
         })
         .on_window_event(|window, event| match event {
-            tauri::WindowEvent::CloseRequested { api, .. } => match window.label() {
-                "main" => {
-                    let _ = window.hide();
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                if window.label() == INSTAGRAM_WINDOW_LABEL {
+                    // Minimal, deterministic close-to-tray: prevent the close
+                    // FIRST, pause via a plain eval (no callbacks/threads/COM —
+                    // those were observed to race with the OS close processing
+                    // and occasionally let the window be destroyed), then hide.
+                    // The watchdog's hidden-transition applies the full layered
+                    // pause within ~800 ms.
                     api.prevent_close();
+                    if let Some(win) = window.get_webview_window(INSTAGRAM_WINDOW_LABEL) {
+                        let _ = win.eval("if (window.__onWindowHidden) window.__onWindowHidden();");
+                        let _ = win.hide();
+                    }
                 }
-                INSTAGRAM_WINDOW_LABEL => {}
-                _ => {}
-            },
+            }
+            // Fast path: tao emits Resized(0x0) the moment the window minimizes,
+            // while the watchdog polls at 800 ms. Pause immediately here too.
+            tauri::WindowEvent::Resized(_) => {
+                if window.label() == INSTAGRAM_WINDOW_LABEL && window.is_minimized().unwrap_or(false)
+                {
+                    if let Some(win) = window.get_webview_window(INSTAGRAM_WINDOW_LABEL) {
+                        pause_media_for_hidden(&win);
+                    }
+                }
+            }
             _ => {}
         })
         .run(tauri::generate_context!())

@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v2.0.0)'
+        required: true
+        default: 'v2.0.0'
 
 jobs:
   release:
@@ -49,7 +54,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
+            libayatana-appindicator3-dev \
             librsvg2-dev \
             patchelf
 
@@ -78,14 +83,27 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'IG-Now ${{ github.ref_name }}'
+          # Order matters: `inputs.tag` (workflow_dispatch) wins over the
+          # pushed tag name; on a tag push `github.ref_name` is used. Never
+          # reverse the order — ref_name is the BRANCH name on dispatch.
+          tagName: ${{ inputs.tag || github.ref_name }}
+          releaseName: 'IG-Now ${{ inputs.tag || github.ref_name }}'
           releaseBody: |
-            ## What's new in ${{ github.ref_name }}
+            ## 🟣 IG-Now — ${{ inputs.tag || github.ref_name }}
 
-            See the assets below to download and install IG-Now for your platform.
+            Instagram, elevated. A lightweight **Rust + Tauri v2** desktop client — same official Instagram, now with real OS superpowers. ~7 MB binary, no Electron.
 
-            ### Platform installers
+            ### ✨ What's new in v2.0.0
+
+            - 🪟 **Close-to-tray** — the ✕ button hides the window to the tray and pauses media instantly; one tray click brings it back.
+            - 🔇 **Guaranteed pause on minimize** — page pause + Windows OS-level audio-session mute + a Rust watchdog: reel audio never plays in the background. Restore resumes at 50% volume, following Instagram's own on-screen autoplay rules.
+            - 🖱️ **Smart Show / Hide tray toggle** — restores whenever minimized/hidden/unfocused, hides (pausing first) only when visible and focused.
+            - 🚀 **Launch on Startup** — starts hidden to the tray, never popping a window over your work.
+            - 🎨 **Seamless About overlay** — Instagram-branded in-app card, version and author link, no window hop.
+            - ⚔️ Full comparison vs Instagram Web in the [README](https://github.com/benedictusrey/IG-Now/blob/main/README.md).
+
+            ### 📦 Downloads
+
             | Platform | File |
             |---|---|
             | Windows 10 / 11 | `IG-Now_*_x64-setup.exe` or `IG-Now_*_x64_en-US.msi` |
@@ -95,11 +113,23 @@ jobs:
             | Linux (Debian/Ubuntu) | `IG-Now_*_amd64.deb` |
             | Linux (RPM) | `IG-Now_*_x86_64.rpm` |
 
-            > **Windows users:** Install [Edge WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) before running the app if it is not already present.
+            ### 🚀 Getting started
+
+            > **Windows:** install [Edge WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) if not already present (preinstalled on Windows 11), then run the installer.
             >
-            > **macOS users:** On first launch, right-click the app → **Open** to allow an unsigned build.
+            > **macOS:** on first launch, right-click the app → **Open** to allow an unsigned build, then confirm in System Settings → Privacy & Security.
             >
-            > **Linux users:** The AppImage is self-contained. For `.deb`/`.rpm` packages, `libwebkit2gtk-4.1` must be available on your system.
+            > **Linux:** the AppImage is self-contained — `chmod +x IG-Now_*_amd64.AppImage && ./IG-Now_*_amd64.AppImage`. For `.deb`/`.rpm`, install `libwebkit2gtk-4.1` first (`sudo apt install libwebkit2gtk-4.1-dev`); tray support on GNOME needs an appindicator extension.
+
+            ### ✨ Highlights
+
+            - 🖥️ Native window + system tray with feed shortcuts (Home, Explore, Reels, DMs, Notifications, Profile)
+            - 💾 Right-click images → save to `Downloads\IG-Now`; right-click videos → Cobalt hand-off with the post link pre-copied
+            - ⌨️ `←`/`→` seek, `↑`/`↓` between Reels, `Esc` to leave, Ctrl+click image zoom viewer (10%–400%)
+            - 📌 Always-on-top · 🔍 Search hover-previews with draggable seek line · 🔎 Zoom controls
+            - 🔐 Signed-in session stays local — no analytics, no account database
+
+            *Authored and maintained with ❤️ by [@benedictusrey](https://github.com/benedictusrey)*
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}

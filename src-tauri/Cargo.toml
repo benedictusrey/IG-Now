@@ -1,6 +1,6 @@
 [package]
 name = "ig-now"
-version = "1.0.0"
+version = "2.0.0"
 description = "IG-Now Desktop Client"
 authors = ["Benedictus"]
 edition = "2021"
@@ -19,7 +19,21 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "devtools"] }
 tauri-plugin-shell = "2"
+tauri-plugin-autostart = "2"
 tokio = { version = "1", features = ["full"] }
+
+# Windows-only: Core Audio session mute/unmute for the process tree (audio.rs).
+# MUST stay target-gated — the `windows` crate pins windows-future 0.2.1, whose
+# non-Windows code paths fail to compile against windows-core 0.61 (imp module
+# is #[cfg(windows)]). Ungated, it breaks the macOS/Linux CI builds.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Media_Audio",
+    "Win32_Media_Audio_Endpoints",
+    "Win32_System_Com",
+    "Win32_System_Diagnostics_ToolHelp",
+] }
 
 [profile.release]
 opt-level = 3

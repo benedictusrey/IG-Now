@@ -10,8 +10,13 @@
 </p>
 
 <p align="center">
-  <strong>🎉 IG-NOW RELEASE: v1.0.0 IS NOW LIVE! 🎉</strong><br/>
+  <strong>🎉 IG-NOW RELEASE: v2.0.0 IS NOW LIVE! 🎉</strong><br/>
   <em>After meticulous development, the latest official build of IG-Now is ready for deployment.</em>
+</p>
+
+<p align="center">
+  <strong>What's new in v2.0.0</strong><br/>
+  <em>Close-to-tray &amp; pause-on-minimize · true Show/Hide tray toggle · launch-on-startup (hidden to tray) · Windows audio-session mute guarantee</em>
 </p>
 
 <p align="center">
@@ -20,7 +25,7 @@
   <img alt="Linux" src="https://img.shields.io/badge/platform-Linux-FCC624?style=flat-square&logo=linux&logoColor=black">
   <img alt="Rust and Tauri 2" src="https://img.shields.io/badge/built%20with-Rust%20%2B%20Tauri%202-24C8DB?style=flat-square&logo=tauri&logoColor=white">
   <img alt="WebView2" src="https://img.shields.io/badge/rendering-WebView2%20%2F%20WebKit-0078D4?style=flat-square&logo=microsoftedge&logoColor=white">
-  <img alt="Version 1.0.0" src="https://img.shields.io/badge/version-1.0.0-e1306c?style=flat-square">
+  <img alt="Version 2.0.0" src="https://img.shields.io/badge/version-2.0.0-e1306c?style=flat-square">
   <a href="https://github.com/benedictusrey"><img src="https://img.shields.io/badge/author-%40benedictusrey-black?style=flat-square&logo=github"/></a>
 </p>
 
@@ -49,11 +54,35 @@ IG-Now strips away the browser clutter to give you a pure, edge-to-edge experien
 </p>
 
 #### 3. Deep OS Integration & Floating Messages Panel
-Why open a browser tab when you can command everything from your taskbar? IG-Now lives inside your OS like a true native application. The floating Messages panel puts your DMs front-and-center while you browse your feed — no switching, no context loss. Right-click images to save them natively to `Downloads\IG-Now`, or copy post links directly to Cobalt for video downloads.
+Why open a browser tab when you can command everything from your taskbar? IG-Now lives inside your OS like a true native application. The floating Messages panel puts your DMs front-and-center while you browse your feed — no switching, no context loss. Right-click images to save them natively to `Downloads\\IG-Now`, or copy post links directly to Cobalt for video downloads.
 
 <p align="center">
   <img src="docs/assets/ignow-messages-panel.png" alt="IG-Now floating Messages panel and OS integration" width="100%"/>
 </p>
+
+---
+
+## ⚔️ IG-Now v2.0.0 vs Instagram Web
+
+Same Instagram, same account, same feed — but the *wrapper around it* is where the desktop magic lives. IG-Now keeps the official Instagram experience and adds the OS integration a browser tab can't offer:
+
+| Capability | 🟣 IG-Now v2.0.0 | 🌐 Instagram Web (browser tab) |
+|---|---|---|
+| **Window & tray presence** | Dedicated native window + system-tray icon with feed shortcuts | One tab among dozens, no app identity |
+| **Close button** | Closes to the tray — app keeps running, media pauses instantly | Closes the tab and the whole browser stays heavy |
+| **Minimize** | Video/reel audio stops the moment the window hides (page + OS audio-session mute, double-guaranteed) | Tab keeps playing audio in the background |
+| **Launch on startup** | Optional — starts hidden to the tray, ready when you are | Must re-open the browser and the tab |
+| **Saving media** | Right-click image → saved to `Downloads\\IG-Now` in one action | Browser right-click menu — often blocked by the site |
+| **Video downloads** | Right-click video → post link copied + [Cobalt](https://cobalt.tools/) opened, folder pre-created | Manual copy/paste between tabs |
+| **Keyboard** | `←` / `→` seek 5 s, `↑` / `↓` move between Reels, `Esc` to close viewer/leave a Reel, Ctrl+click to zoom images | Browser shortcuts only |
+| **Image viewer** | Built-in zoom viewer (10%–400%) with drag-to-pan | Browser zoom (whole page) |
+| **Search cards** | Hover-to-preview with a draggable seek line, 20% volume | Play/pause only |
+| **Audio defaults** | 50% unmuted after your first interaction — enforced by a startup watchdog that even clears stale Windows session mutes | Browser autoplay policies fight you |
+| **Always on top** | One tray toggle pins the window above everything | Not possible |
+| **Memory footprint** | One lean WebView2 process (≈7 MB binary, no Electron) | A full browser engine + every extension |
+| **External links** | Instagram links stay in-app; everything else opens in your default browser | New tabs pile up |
+
+> **Bottom line:** IG-Now is not a different Instagram — it is the *desktop experience* Instagram should have had. Same content, same login, zero learning curve; every superpower lives outside the page, where the browser can't reach.
 
 ---
 
@@ -72,7 +101,7 @@ We provide cross-platform builds for **Windows, macOS, and Linux** through GitHu
 ### Windows
 
 1. Install the [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) if not already present.
-2. Run `IG-Now_1.0.0_x64-setup.exe` (or the `.msi` variant).
+2. Run `IG-Now_2.0.0_x64-setup.exe` (or the `.msi` variant).
 3. Sign in through the official Instagram page shown inside the app.
 4. Reopen **IG-Now** later to resume your existing session automatically.
 5. Use the system-tray icon for navigation, Cobalt hand-off, and app controls.
@@ -87,8 +116,8 @@ The login session is stored by the WebView2 application data folder on the local
 
 ### Linux
 
-1. Make the AppImage executable: `chmod +x IG-Now_1.0.0_amd64.AppImage`
-2. Run it: `./IG-Now_1.0.0_amd64.AppImage`
+1. Make the AppImage executable: `chmod +x IG-Now_2.0.0_amd64.AppImage`
+2. Run it: `./IG-Now_2.0.0_amd64.AppImage`
 3. Sign in through the Instagram page inside the app.
 
 > **Tip:** On some Linux distributions you may need `libwebkit2gtk-4.1` installed: `sudo apt install libwebkit2gtk-4.1-dev`
@@ -190,6 +219,17 @@ The repository checks validate JavaScript syntax, Rust formatting, Rust dependen
 4. Test `←` / `→` seeking and `Escape` on a standalone Reel.
 5. Test Ctrl-click, right-click, default-browser routing, and the Cobalt hand-off.
 6. Confirm image output appears in `Downloads\IG-Now`.
+
+---
+
+## 📚 Documentation
+
+| Document | What you'll find |
+|---|---|
+| [RELEASE_NOTES.md](RELEASE_NOTES.md) | What's new in v2.0.0 — everything changed since v1.0.0, platform by platform |
+| [CHANGELOG.md](CHANGELOG.md) | Full version history, one entry per release |
+| [SECURITY.md](SECURITY.md) | Supported versions, security & privacy guarantees |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Build from source on Windows, macOS & Linux; how to contribute |
 
 ---
 

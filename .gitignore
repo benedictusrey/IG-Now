@@ -19,3 +19,6 @@
 # Windows/macOS metadata
 Thumbs.db
 .DS_Store
+
+# Nested repository artifact (accidental clone inside the repo root)
+/IG-Now/
