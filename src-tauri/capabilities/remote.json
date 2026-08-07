@@ -1,0 +1,20 @@
+{
+  "$schema": "https://schema.tauri.app/config/2/capability",
+  "identifier": "remote-instagram-com",
+  "description": "Minimal native permissions granted to the instagram.com page: media saving and default-browser hand-off. Tauri rejects app commands from remote origins unless an explicit remote capability grants them.",
+  "windows": [
+    "instagram"
+  ],
+  "remote": {
+    "urls": [
+      "https://www.instagram.com/*"
+    ]
+  },
+  "local": false,
+  "permissions": [
+    "allow-download-media",
+    "allow-save-media-bytes",
+    "allow-open-external-url",
+    "allow-prepare-download-folder"
+  ]
+}
