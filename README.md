@@ -35,10 +35,6 @@
 
 **IG-Now** isn't just a wrapper — it's a meticulously engineered native desktop client that supercharges your Instagram experience. Designed for speed, aesthetics, and power users, IG-Now seamlessly bridges the gap between the Instagram web and your operating system.
 
-<p align="center">
-  <img src="docs/assets/ignow-final-branded.png" alt="IG-Now — a calm, native Instagram desktop workspace" width="100%"/>
-</p>
-
 > IG-Now is not affiliated with, sponsored by, or maintained by Instagram or Meta Platforms, Inc. Use Instagram and any downloader service according to their terms, local law, and the rights attached to the media.
 
 ### 🌟 Why Choose IG-Now?
@@ -51,10 +47,6 @@ Say goodbye to the heavy memory usage of standard web browsers. Built entirely o
 </p>
 
 Every account gets an **isolated local profile** — one login per account, no session mixing, and background accounts trimmed automatically to keep memory low.
-
-<p align="center">
-  <img src="docs/assets/ignow-profile-isolated.png" alt="IG-Now isolated per-account profiles" width="100%"/>
-</p>
 
 #### 2. Immersive Reels & Distraction-Free Aesthetics
 IG-Now strips away the browser clutter to give you a pure, edge-to-edge experience with native styling. Reels are optimized to play smoothly as you scroll — pausing instantly when out of view to protect your RAM. Keyboard navigation (`↑` / `↓`) lets you fly through content without touching your mouse. The result: a cinematic, browser-free Reels session.
