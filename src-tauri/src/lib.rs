@@ -1,3 +1,9 @@
+// IG-Now — High-Performance Desktop Client for Instagram
+// Sole Author & Creator: Benedictus Reynaldo Hartanto (@benedictusrey)
+// Repository: https://github.com/benedictusrey/IG-Now
+// All rights reserved. See LICENSE for details.
+
+mod about_logo;
 #[cfg(windows)]
 mod audio;
 mod tray;
@@ -11,11 +17,81 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{utils::config::Color, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_shell::ShellExt;
 
 const INSTAGRAM_WINDOW_LABEL: &str = "instagram";
 const INSTAGRAM_HELPER_SCRIPT: &str = include_str!("../../frontend/instagram-tools.js");
+
+/// Default window geometry (logical px): 1180 x 1032, launched centered in the
+/// monitor's work area (screen minus the top system bar and the bottom
+/// taskbar) so it never opens clipped on either edge.
+const DEFAULT_WINDOW_WIDTH: f64 = 1180.0;
+const DEFAULT_WINDOW_HEIGHT: f64 = 1032.0;
+/// Hard minimum, enforced by the builder's `min_inner_size` as well.
+const MIN_WINDOW_WIDTH: f64 = 900.0;
+const MIN_WINDOW_HEIGHT: f64 = 680.0;
+
+/// Clamp the window to the monitor's WORK AREA (excludes the taskbar and any
+/// top system bar) and center it there. The requested default is 1180x1032
+/// logical px; when the work area cannot fit the window's outer size (client
+/// + title bar + borders, measured from the real window so per-platform
+/// decoration differences are exact), the size is reduced to fit. This keeps
+/// the default resolution on normal desktops and gracefully shrinks only on
+/// small displays instead of opening clipped under the taskbar.
+///
+/// Instagram's UI is dark; painting the webview background the same near-black
+/// (18,18,18) removes the white flash on every navigation (v2.1.0).
+fn fit_window_to_work_area(window: &tauri::WebviewWindow) {
+    let Ok(inner) = window.inner_size() else {
+        return;
+    };
+    let Ok(outer) = window.outer_size() else {
+        return;
+    };
+    let Some(monitor) = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten())
+    else {
+        return;
+    };
+    let scale = monitor.scale_factor();
+    let work = monitor.work_area();
+    let work_width = work.size.width as f64;
+    let work_height = work.size.height as f64;
+
+    // Decoration overhead (title bar + borders) in physical pixels.
+    let overhead_width = outer.width.saturating_sub(inner.width) as f64;
+    let overhead_height = outer.height.saturating_sub(inner.height) as f64;
+
+    let max_inner_width = ((work_width - overhead_width) / scale).max(0.0);
+    let max_inner_height = ((work_height - overhead_height) / scale).max(0.0);
+    let target_width = DEFAULT_WINDOW_WIDTH
+        .min(max_inner_width)
+        .max(MIN_WINDOW_WIDTH);
+    let target_height = DEFAULT_WINDOW_HEIGHT
+        .min(max_inner_height)
+        .max(MIN_WINDOW_HEIGHT);
+
+    let current_width = inner.width as f64 / scale;
+    let current_height = inner.height as f64 / scale;
+    if (current_width - target_width).abs() > 0.5 || (current_height - target_height).abs() > 0.5 {
+        let _ = window.set_size(tauri::LogicalSize::new(target_width, target_height));
+    }
+
+    // Center within the work area (NOT the raw monitor bounds) so the window
+    // sits between the top bar and the bottom taskbar.
+    let Ok(final_outer) = window.outer_size() else {
+        return;
+    };
+    let x =
+        work.position.x + (((work_width - final_outer.width as f64) / 2.0).floor() as i32).max(0);
+    let y =
+        work.position.y + (((work_height - final_outer.height as f64) / 2.0).floor() as i32).max(0);
+    let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+}
 
 /// Guards the playback watchdog so it is spawned exactly once per process,
 /// no matter how many times the Instagram window is (re)launched.
@@ -71,6 +147,11 @@ const REPORT_JS: &str = r#"(function(){
     });
 })()"#;
 
+/// Guards the 2.5 s pause re-check so at most ONE runs at a time. The old
+/// per-call detached thread piled up threads on rapid minimize/restore
+/// cycles (v2.1.0 perf fix).
+static PAUSE_RECHECK_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+
 /// Pause playback when the window becomes hidden/minimized. Layered:
 /// page-side pause (in `__onWindowHidden`), then a hard mute of this app's
 /// Windows audio sessions as a guarantee.
@@ -80,13 +161,18 @@ fn pause_media_for_hidden(w: &tauri::WebviewWindow) {
     });
     // Re-check a moment later: if the player engine re-played it, the report
     // will show it (and the OS-level session mute still guarantees silence).
-    let w2 = w.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(2500));
-        let _ = w2.eval_with_callback(REPORT_JS, |report| {
-            eprintln!("[IG-Now] Watchdog recheck: {}", report);
+    // Skipped when another re-check is already pending — transitions fire
+    // faster than the 2.5 s window on rapid minimize/restore cycles.
+    if !PAUSE_RECHECK_IN_FLIGHT.swap(true, Ordering::Relaxed) {
+        let w2 = w.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(2500));
+            let _ = w2.eval_with_callback(REPORT_JS, |report| {
+                eprintln!("[IG-Now] Watchdog recheck: {}", report);
+            });
+            PAUSE_RECHECK_IN_FLIGHT.store(false, Ordering::Relaxed);
         });
-    });
+    }
     #[cfg(windows)]
     if audio::set_app_audio_mute(true) {
         eprintln!("[IG-Now] Watchdog: audio sessions muted");
@@ -143,12 +229,16 @@ fn watch_instagram_window(w: tauri::WebviewWindow) {
                 if unmute_ticks >= 3 && !hidden {
                     if audio::set_app_audio_mute(false) {
                         startup_unmuted = true;
-                        eprintln!("[IG-Now] Watchdog: startup unmute (cleared persisted session mute)");
+                        eprintln!(
+                            "[IG-Now] Watchdog: startup unmute (cleared persisted session mute)"
+                        );
                         // Immediate evidence: session state right after clearing.
                         audio::report_audio_state();
                     } else if unmute_ticks >= 60 {
                         startup_unmuted = true; // no session appeared — nothing to clear
-                        eprintln!("[IG-Now] Watchdog: startup unmute gave up (no session appeared)");
+                        eprintln!(
+                            "[IG-Now] Watchdog: startup unmute gave up (no session appeared)"
+                        );
                     }
                 }
             }
@@ -205,13 +295,25 @@ pub fn launch_instagram_internal(app: &AppHandle, start_minimized: bool) -> Resu
         WebviewUrl::External("https://www.instagram.com/".parse().unwrap()),
     )
     .title("IG-Now")
-    .inner_size(1175.0, 885.0)
-    .min_inner_size(900.0, 680.0)
+    .inner_size(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)
+    .min_inner_size(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
     .resizable(true)
     .center()
-    .visible(!start_minimized)
+    // Anti-flash: the webview paints Instagram's near-black from the first
+    // frame instead of white, and the window is only shown once the page has
+    // finished loading (on_page_load below) — no white/black blink on launch
+    // or in-app navigation.
+    .background_color(Color(18, 18, 18, 255))
+    .visible(false)
     .data_directory(profile_data_dir)
     .initialization_script(INSTAGRAM_HELPER_SCRIPT)
+    .on_page_load(move |window, payload| {
+        if payload.event() == tauri::webview::PageLoadEvent::Finished && !start_minimized {
+            let _ = window.show();
+            let _ = window.set_focus();
+            let _ = window.unminimize();
+        }
+    })
     .on_new_window(move |url, _features| {
         if let Err(error) = open_external_url(browser_app.clone(), url.to_string()) {
             eprintln!("[IG-Now] Failed to open a link in the default browser: {error}");
@@ -222,11 +324,25 @@ pub fn launch_instagram_internal(app: &AppHandle, start_minimized: bool) -> Resu
     .build()
     .map_err(|error| error.to_string())?;
 
+    // Paint-ready show: `on_page_load` (builder above) reveals the window
+    // only once the page has finished loading, killing the launch flash.
+    // This fallback guarantees the window still appears if a page never
+    // reaches load-finished (offline start, stalled navigation).
     if !start_minimized {
-        window.unminimize().map_err(|error| error.to_string())?;
-        window.show().map_err(|error| error.to_string())?;
-        window.set_focus().map_err(|error| error.to_string())?;
+        let fallback = window.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(8));
+            if !fallback.is_visible().unwrap_or(true) {
+                let _ = fallback.show();
+                let _ = fallback.set_focus();
+            }
+        });
     }
+
+    // 1180x1032 default, clamped to the work area and centered between the
+    // top system bar and the bottom taskbar (also applied for the
+    // autostart-hidden case so restoring shows the right geometry).
+    fit_window_to_work_area(&window);
 
     // Start the playback watchdog exactly once for this window. It polls the
     // REAL window state (minimized/visible) and applies the layered pause /
@@ -442,7 +558,8 @@ pub fn run() {
             // Fast path: tao emits Resized(0x0) the moment the window minimizes,
             // while the watchdog polls at 800 ms. Pause immediately here too.
             tauri::WindowEvent::Resized(_) => {
-                if window.label() == INSTAGRAM_WINDOW_LABEL && window.is_minimized().unwrap_or(false)
+                if window.label() == INSTAGRAM_WINDOW_LABEL
+                    && window.is_minimized().unwrap_or(false)
                 {
                     if let Some(win) = window.get_webview_window(INSTAGRAM_WINDOW_LABEL) {
                         pause_media_for_hidden(&win);

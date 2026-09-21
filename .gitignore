@@ -16,20 +16,18 @@
 .env.*
 *.local
 *.log
+.freebuff
+.freebuff/
 
-# Local release staging. Upload these files to GitHub Releases instead of
-# committing binaries to the repository history.
-release-assets/**/*.exe
-release-assets/**/*.msi
-release-assets/**/*.AppImage
-release-assets/**/*.deb
-release-assets/**/*.dmg
-release-assets/**/*.tar.gz
-!release-assets/**/README.md
+# Private maintainer-only backup area (never commit or push this).
+/backup/
+
+# Local release staging, organized per version. Upload these files to GitHub
+# Releases instead of committing binaries to the repository history.
+/releases/versions/*/binaries/
+!releases/**/README.md
+!releases/versions.json
 
 # Windows/macOS metadata
 Thumbs.db
 .DS_Store
-
-# Nested repository artifact (accidental clone inside the repo root)
-/IG-Now/

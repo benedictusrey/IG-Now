@@ -10,22 +10,22 @@
 </p>
 
 <p align="center">
-  <strong>🎉 IG-NOW RELEASE: v2.0.0 IS NOW LIVE! 🎉</strong><br/>
-  <em>After meticulous development, the latest official build of IG-Now is ready for deployment.</em>
+  <strong>🎉 IG-NOW RELEASE: v2.1.0 IS NOW LIVE! 🎉</strong><br/>
+  <em>After meticulous development and deep refinement, the official v2.1.0 release is ready for production.</em>
 </p>
 
 <p align="center">
-  <strong>What's new in v2.0.0</strong><br/>
-  <em>Close-to-tray &amp; pause-on-minimize · true Show/Hide tray toggle · launch-on-startup (hidden to tray) · Windows audio-session mute guarantee</em>
+  <strong>✨ What's new in v2.1.0</strong><br/>
+  <em>Interactive seek bar everywhere · synchronized volume toggle & hover slider · dedicated skip (−5s/+5s) & reel navigation (⏮/⏭) · work-area centered 1180 × 1032 window · anti-flash launch · Universal macOS & Linux builds · dual SHA-256 manifests</em>
 </p>
 
 <p align="center">
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-4285f4?style=flat-square&logo=windows&logoColor=white">
-  <img alt="macOS" src="https://img.shields.io/badge/platform-macOS-lightgrey?style=flat-square&logo=apple&logoColor=black">
-  <img alt="Linux" src="https://img.shields.io/badge/platform-Linux-FCC624?style=flat-square&logo=linux&logoColor=black">
+  <img alt="macOS" src="https://img.shields.io/badge/platform-macOS%20(Universal)-lightgrey?style=flat-square&logo=apple&logoColor=black">
+  <img alt="Linux" src="https://img.shields.io/badge/platform-Linux%20(Universal)-FCC624?style=flat-square&logo=linux&logoColor=black">
   <img alt="Rust and Tauri 2" src="https://img.shields.io/badge/built%20with-Rust%20%2B%20Tauri%202-24C8DB?style=flat-square&logo=tauri&logoColor=white">
-  <img alt="WebView2" src="https://img.shields.io/badge/rendering-WebView2%20%2F%20WebKit-0078D4?style=flat-square&logo=microsoftedge&logoColor=white">
-  <img alt="Version 2.0.0" src="https://img.shields.io/badge/version-2.0.0-e1306c?style=flat-square">
+  <img alt="WebView2 and WebKit" src="https://img.shields.io/badge/rendering-WebView2%20%2F%20WebKit-0078D4?style=flat-square&logo=microsoftedge&logoColor=white">
+  <img alt="Version 2.1.0" src="https://img.shields.io/badge/version-2.1.0-e1306c?style=flat-square">
   <a href="https://github.com/benedictusrey"><img src="https://img.shields.io/badge/author-%40benedictusrey-black?style=flat-square&logo=github"/></a>
 </p>
 
@@ -33,211 +33,176 @@
 
 ## 🚀 Welcome to the Future of Instagram on Desktop
 
-**IG-Now** isn't just a wrapper — it's a meticulously engineered native desktop client that supercharges your Instagram experience. Designed for speed, aesthetics, and power users, IG-Now seamlessly bridges the gap between the Instagram web and your operating system.
+**IG-Now** isn't just a browser wrapper — it is a meticulously engineered native desktop client that supercharges your Instagram experience. Designed for extreme performance, distraction-free aesthetics, and power-user ergonomics, IG-Now bridges the gap between Instagram and your operating system.
 
-> IG-Now is not affiliated with, sponsored by, or maintained by Instagram or Meta Platforms, Inc. Use Instagram and any downloader service according to their terms, local law, and the rights attached to the media.
+> **Disclaimer:** IG-Now is an independent open-source project and is not affiliated with, sponsored by, or maintained by Instagram or Meta Platforms, Inc. Use Instagram and third-party downloader services in accordance with their terms of service, applicable laws, and copyright regulations.
+
+<p align="center">
+  <img src="docs/assets/IG-Now%20hero.png" alt="IG-Now Desktop Experience Hero Showcase" width="100%"/>
+</p>
 
 ### 🌟 Why Choose IG-Now?
 
-#### 1. Unrivaled Performance & Efficiency
-Say goodbye to the heavy memory usage of standard web browsers. Built entirely on Rust and Tauri v2, IG-Now is designed to be incredibly lightweight. It actively manages background resources, meaning your computer stays blazing fast and responsive — even during endless scrolling sessions. Your Instagram feed, delivered at native speed.
+#### 1. Unrivaled Performance & Native Efficiency
+Say goodbye to the heavy memory overhead and resource competition of typical Chromium-based browser tabs. Built with a pure Rust core and Tauri v2, IG-Now operates as a featherweight, single-process native application (~7 MB binary). It actively orchestrates background resources: media pauses instantly when hidden, memory footprint stays low, and your system remains snappy during extended browsing.
+
+#### 2. Immersive Reels, Seeking & In-Depth Media Controls
+IG-Now removes the browser chrome to give you a clean, edge-to-edge cinematic canvas. Every video across Reels, the home feed, and Search cards is equipped with native control overlays:
+- **Interactive Seek Bar Everywhere:** Click or drag anywhere along the white progress line. Handled at the window-capture level, it functions reliably even across complex Instagram page layers.
+- **Dedicated Skip & Navigation Buttons:** Jump `-5s` or `+5s` with dedicated buttons flanking the seek line, or navigate between posts and Reels with `⏮` and `⏭` buttons without needing mouse wheel gymnastics.
+- **Synchronized Volume Control & Hover Slider:** A dedicated audio button with a hover-expand volume level slider synchronized bidirectionally with Instagram's native vertical player. A smart audio guard protects your mute/unmute choices from being overridden by page script transitions.
 
 <p align="center">
-  <img src="docs/assets/ignow-home-grid.png" alt="IG-Now home feed grid with lifestyle posts" width="100%"/>
+  <img src="docs/assets/IG-Now%20features.png" alt="IG-Now In-Depth Features and Media Overlay" width="100%"/>
 </p>
 
-Every account gets an **isolated local profile** — one login per account, no session mixing, and background accounts trimmed automatically to keep memory low.
-
-#### 2. Immersive Reels & Distraction-Free Aesthetics
-IG-Now strips away the browser clutter to give you a pure, edge-to-edge experience with native styling. Reels are optimized to play smoothly as you scroll — pausing instantly when out of view to protect your RAM. Keyboard navigation (`↑` / `↓`) lets you fly through content without touching your mouse. The result: a cinematic, browser-free Reels session.
-
-<p align="center">
-  <img src="docs/assets/ignow-reel-viewer.png" alt="IG-Now immersive Reels viewer with video autoplay" width="100%"/>
-</p>
-
-#### 3. Deep OS Integration & Floating Messages Panel
-Why open a browser tab when you can command everything from your taskbar? IG-Now lives inside your OS like a true native application. The floating Messages panel puts your DMs front-and-center while you browse your feed — no switching, no context loss. Right-click images to save them natively to `Downloads\\IG-Now`, or copy post links directly to Cobalt for video downloads.
+#### 3. Deep OS Integration & System Tray
+IG-Now lives inside your operating system like a first-class desktop citizen:
+- **System Tray Presence:** Instant navigation to Home, Explore, Reels, Direct Messages, Notifications, and Profile with a single right-click on the taskbar/menu bar.
+- **Close-to-Tray & Pause-on-Minimize:** Clicking the `✕` close button tucks the window into the tray while preserving your signed-in session. Minimizing or hiding the window triggers an instant pause on all playing media backed by a Windows OS audio-session mute guarantee.
+- **One-Click Media Saving:** Right-click any image to save it directly into `Downloads/IG-Now`. Right-click videos to copy the post link and open Cobalt downloader with the destination folder pre-created.
+- **Launch on Startup:** Optional background startup that launches minimized to the tray, ready the instant you need it.
 
 <p align="center">
-  <img src="docs/assets/ignow-messages-panel.png" alt="IG-Now floating Messages panel and OS integration" width="100%"/>
+  <img src="docs/assets/IG-Now%20tray.png" alt="IG-Now System Tray Menu and OS Shortcuts" width="100%"/>
 </p>
 
 ---
 
-## ⚔️ IG-Now v2.0.0 vs Instagram Web
+## ⚔️ IG-Now v2.1.0 vs Instagram Web
 
-Same Instagram, same account, same feed — but the *wrapper around it* is where the desktop magic lives. IG-Now keeps the official Instagram experience and adds the OS integration a browser tab can't offer:
+Same official Instagram feed, account, and security — but with true desktop ergonomics:
 
-| Capability | 🟣 IG-Now v2.0.0 | 🌐 Instagram Web (browser tab) |
+| Capability | 🟣 IG-Now v2.1.0 | 🌐 Instagram Web (Browser Tab) |
 |---|---|---|
-| **Window & tray presence** | Dedicated native window + system-tray icon with feed shortcuts | One tab among dozens, no app identity |
-| **Close button** | Closes to the tray — app keeps running, media pauses instantly | Closes the tab and the whole browser stays heavy |
-| **Minimize** | Video/reel audio stops the moment the window hides (page + OS audio-session mute, double-guaranteed) | Tab keeps playing audio in the background |
-| **Launch on startup** | Optional — starts hidden to the tray, ready when you are | Must re-open the browser and the tab |
-| **Saving media** | Right-click image → saved to `Downloads\\IG-Now` in one action | Browser right-click menu — often blocked by the site |
-| **Video downloads** | Right-click video → post link copied + [Cobalt](https://cobalt.tools/) opened, folder pre-created | Manual copy/paste between tabs |
-| **Keyboard** | `←` / `→` seek 5 s, `↑` / `↓` move between Reels, `Esc` to close viewer/leave a Reel, Ctrl+click to zoom images | Browser shortcuts only |
-| **Image viewer** | Built-in zoom viewer (10%–400%) with drag-to-pan | Browser zoom (whole page) |
-| **Search cards** | Hover-to-preview with a draggable seek line, 20% volume | Play/pause only |
-| **Audio defaults** | 50% unmuted after your first interaction — enforced by a startup watchdog that even clears stale Windows session mutes | Browser autoplay policies fight you |
-| **Always on top** | One tray toggle pins the window above everything | Not possible |
-| **Memory footprint** | One lean WebView2 process (≈7 MB binary, no Electron) | A full browser engine + every extension |
-| **External links** | Instagram links stay in-app; everything else opens in your default browser | New tabs pile up |
-
-> **Bottom line:** IG-Now is not a different Instagram — it is the *desktop experience* Instagram should have had. Same content, same login, zero learning curve; every superpower lives outside the page, where the browser can't reach.
+| **System Tray & Window Presence** | Dedicated native window + tray menu with fast feed shortcuts | Lost among dozens of browser tabs |
+| **Close Button (`✕`)** | Closes to tray — app remains ready, all playback pauses instantly | Closes the tab and loses navigation context |
+| **Minimize Behavior** | Guaranteed pause (page-level pause + OS-level audio session mute) | Audio continues playing in the background |
+| **Seek Bar on Videos** | Clickable & draggable on **all** videos (Reels, feed, Search previews) | Reel-only or completely locked to page handlers |
+| **Skip & Navigation Controls** | `-5s` / `+5s` seek buttons + `⏮` / `⏭` Reel switch buttons | Keyboard only or not available |
+| **Volume Control** | Dedicated overlay toggle + hover-expand level slider with 2-way sync | Page slider only, frequently auto-remutes |
+| **Media Saving** | Right-click image → saves instantly to `Downloads/IG-Now` | Blocked or hidden behind complex inspect menus |
+| **Video Downloader Link** | Right-click video → copies URL & opens Cobalt with folder ready | Manual link copying and tab switching |
+| **Image Zoom Viewer** | Built-in high-res zoom viewer (10% to 400%) with drag-to-pan | Whole-page browser zoom only |
+| **Window Geometry** | Default 1180 × 1032, clamped to work area & centered nicely | Arbitrary browser window sizes |
+| **Visual Launch** | Dark Instagram background from frame 1, paint-ready reveal (no flash) | White flash frames during page load |
+| **Memory & CPU Footprint** | ~7 MB binary, lean WebView2/WebKit footprint, zero Electron bloat | Heavy multi-gigabyte browser engine |
+| **External Link Routing** | Instagram links stay in-app; external links open in default browser | Piles up new tabs inside the same browser |
 
 ---
 
-## Quick Start
+## 📦 Quick Start & Downloads
 
-### Use the Release Builds
+We provide pre-built, automated universal packages for **Windows, macOS, and Linux** generated via GitHub Actions. Head to the official [Releases](https://github.com/benedictusrey/IG-Now/releases) page to download:
 
-We provide cross-platform builds for **Windows, macOS, and Linux** through GitHub Actions. Head to the [Releases](https://github.com/benedictusrey/IG-Now/releases) page to download the latest version for your system.
-
-| Platform | Installer | Notes |
+| Platform | Installer / Package | Target & Architecture |
 |---|---|---|
-| **Windows 10/11** | `.exe` (NSIS) or `.msi` (WiX) | Requires Edge WebView2 Runtime |
-| **macOS** | `.dmg` (Apple Silicon + Intel) | Requires macOS 10.15+ |
-| **Linux** | `.AppImage` / `.deb` / `.rpm` | Requires libwebkit2gtk-4.1 |
+| **Windows 10 / 11** | `IG-Now_2.1.0_x64-setup.exe` / `IG-Now_2.1.0_x64_en-US.msi` | 64-bit (Edge WebView2 Runtime) |
+| **macOS** | `IG-Now_2.1.0_universal.dmg` | Universal (Apple Silicon M1/M2/M3/M4 & Intel x86_64) |
+| **Linux (Universal)** | `IG-Now_2.1.0_amd64.AppImage` | Portable binary (runs on all major distros) |
+| **Linux (Debian/Ubuntu)** | `IG-Now_2.1.0_amd64.deb` | Ubuntu, Debian, Linux Mint, Pop!_OS |
+| **Linux (RPM)** | `IG-Now_2.1.0_x86_64.rpm` | Fedora, RHEL, openSUSE |
 
-### Windows
+All releases include SHA-256 manifests (`checksums.txt` and `SHA256SUMS.txt`) to verify the integrity of your download.
 
-1. Install the [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) if not already present.
-2. Run `IG-Now_2.0.0_x64-setup.exe` (or the `.msi` variant).
-3. Sign in through the official Instagram page shown inside the app.
-4. Reopen **IG-Now** later to resume your existing session automatically.
-5. Use the system-tray icon for navigation, Cobalt hand-off, and app controls.
+### Platform Instructions
 
-The login session is stored by the WebView2 application data folder on the local machine. IG-Now does not implement a secondary profile manager — Instagram's own account-switching UI handles multiple signed-in accounts.
+#### Windows
+1. Download and run `IG-Now_2.1.0_x64-setup.exe` (or the `.msi` package).
+2. The installer will automatically offer to download the [Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) if missing (preinstalled on Windows 11).
+3. Sign in securely through Instagram's official login page. Your session persists in the local machine profile.
 
-### macOS
+#### macOS
+1. Download `IG-Now_2.1.0_universal.dmg` and drag **IG-Now** to your `Applications` folder.
+2. On initial launch, right-click the app icon → select **Open** to approve the unsigned binary, then confirm under **System Settings → Privacy & Security**.
+3. Sign in and enjoy native desktop shortcuts and menu controls.
 
-1. Open the downloaded `.dmg` and drag **IG-Now** to your Applications folder.
-2. On first launch, right-click and choose **Open** to bypass Gatekeeper (unsigned build).
-3. Sign in through the Instagram page that appears inside the app.
-
-### Linux
-
-1. Make the AppImage executable: `chmod +x IG-Now_2.0.0_amd64.AppImage`
-2. Run it: `./IG-Now_2.0.0_amd64.AppImage`
-3. Sign in through the Instagram page inside the app.
-
-> **Tip:** On some Linux distributions you may need `libwebkit2gtk-4.1` installed: `sudo apt install libwebkit2gtk-4.1-dev`
-
----
-
-## Media Controls
-
-| Context | Default target | Seeking | Audio & native controls |
-|---|---:|---|---|
-| Search card while hovered | 20% | Click or drag the white seek line | Autoplays muted; Instagram's mute UI remains the authority |
-| Home or Reels media after a user gesture | 50% | `←` / `→` — 5 seconds | Unmuted after the gesture; Instagram fullscreen and mute controls remain available |
-| Standalone Reel after opening a card | 50% | `←` / `→` — 5 seconds | Unmuted after opening; `Escape` returns to the previous state |
-
-The IG-Now overlay does not add a duplicate mute icon. Its empty areas are pointer-transparent so Instagram's own mute and fullscreen elements receive clicks directly. Only the IG-Now play button and Search-card seek bar own their small interaction regions.
+#### Linux
+1. For AppImage: mark executable and launch:
+   ```bash
+   chmod +x IG-Now_2.1.0_amd64.AppImage
+   ./IG-Now_2.1.0_amd64.AppImage
+   ```
+2. For Debian/Ubuntu (`.deb`) or Fedora (`.rpm`), install via your package manager:
+   ```bash
+   sudo apt install ./IG-Now_2.1.0_amd64.deb     # Debian / Ubuntu
+   sudo dnf install ./IG-Now_2.1.0_x86_64.rpm   # Fedora / RHEL
+   ```
+   *(Ensure `libwebkit2gtk-4.1` is installed on your distribution).*
 
 ---
 
-## Saving & Opening Media
+## 🎛️ Media Controls Reference
+
+| Context | Target / Profile | Seek Interactions | Audio & Overlay Controls |
+|---|---|---|---|
+| **Home Feed & Reels** | Active playing media | Click/drag white seek line or press `←` / `→` (5s) | Overlay play/pause, volume mute toggle, hover volume slider, skip (−5s/+5s), next/prev (⏮/⏭) |
+| **Search Card Hover** | Preview thumbnail | Click or drag seek line | Autoplays muted at preview level; Instagram native UI remains clickable |
+| **Standalone Reel Dialog** | Fullscreen / Modal | Click/drag seek line or `←` / `→` (5s); `Esc` to exit | Unmuted after opening; full overlay controls with audio guard |
+
+---
+
+## 💾 Saving & Media Hand-Off
 
 ### Images
-
-Right-click any image and choose the save action. IG-Now creates the folder below when needed and writes the image there:
-
+Right-click any photo and choose **Save image to Downloads**. IG-Now automatically writes the image bytes directly to:
 ```text
-%USERPROFILE%\Downloads\IG-Now
+<User Downloads Folder>/IG-Now
 ```
-
-*(On macOS and Linux, the equivalent user Downloads folder is used.)*
+*(e.g., `C:\Users\<User>\Downloads\IG-Now` on Windows; `~/Downloads/IG-Now` on macOS and Linux).*
 
 ### Videos
-
-Right-click a video and choose **Copy link and open Cobalt**. IG-Now copies the exact Instagram post URL, prepares the `Downloads\IG-Now` directory, and opens:
-
-```text
-https://cobalt.tools/?u=<encoded-post-url>
-```
-
-Choose the video format and save from Cobalt into the prepared `Downloads\IG-Now` folder. Cobalt is an external service; it may require an authorized instance and controls the final download response. IG-Now does not bypass Instagram access controls.
-
-### Default Browser
-
-Use the media menu's **Open post in default browser** action, or right-click any Instagram link and choose **Open link in default browser**. The native Tauri shell validates the destination as an HTTP(S) URL before opening.
+Right-click any video and select **Copy link and open Cobalt**. IG-Now copies the exact post URL, prepares the `Downloads/IG-Now` directory, and opens the [Cobalt](https://cobalt.tools/) service in your default browser.
 
 ---
 
-## Requirements
+## 🔒 Security & Privacy Guarantees
 
-- **Windows** 10/11 (64-bit) with [Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/), **macOS** 10.15+, or **Linux** (x64/arm64).
-- Internet access to load Instagram and any external Cobalt page.
-- A signed-in Instagram session for account-specific content.
+- **100% Local Authentication:** Your credentials and cookies are stored exclusively inside the local OS webview sandbox. IG-Now has no intermediary servers, no external APIs, and no telemetry.
+- **Zero Analytics:** We do not track what you view, whom you message, or how long you browse.
+- **Audited Native Commands:** The native Rust bridge exposes only safe, explicit commands with path validation and strict HTTP(S) protocol checking.
+- For complete security information, please consult [SECURITY.md](SECURITY.md).
 
 ---
 
-## Build from Source
+## 🔨 Building from Source
 
-Install [Node.js](https://nodejs.org/), [Rust](https://rustup.rs/), and the [Tauri 2 CLI](https://tauri.app/start/), then run the checks from the repository root:
+To build IG-Now locally, ensure [Rust](https://rustup.rs/) and [Node.js](https://nodejs.org/) are installed:
 
-```sh
+```bash
+# Verify JavaScript injected script
 node --check frontend/instagram-tools.js
 
+# Build and test Rust core
 cd src-tauri
 cargo fmt --all -- --check
 cargo check
-cargo tauri build --ci
-```
+cargo test --lib
 
-To keep build products outside the source tree on Windows:
-
-```powershell
-$env:CARGO_TARGET_DIR = 'C:\path\to\ig-now-build-target'
-cargo tauri build --ci --no-sign
+# Package production release
+cargo build --release
 ```
 
 ---
 
-## Privacy & Security Notes
+## 🤝 Contributing & Pull Requests
 
-IG-Now does not add analytics or a remote account database. Instagram page traffic is handled by Instagram's service natively inside WebView2/WebKit. The local session data stays on the local computer. The native bridge exposes only the narrow actions required for: opening safe external URLs, saving image bytes, preparing the download folder, and handing off a media URL that Instagram has already exposed.
-
-Treat the following as private:
-
-- WebView session data and your signed-in account state.
-- Downloaded media in `Downloads\IG-Now`.
-- Any copied Instagram post URL.
-- Cobalt results and any third-party downloader response.
-
-The README showcase images are synthetic mockups and contain no actual user account data.
+We warmly welcome community contributions to make IG-Now faster, cleaner, and better! Whether it is reporting a bug, proposing an architectural enhancement, or submitting a pull request, please review our [Contributing Guidelines](CONTRIBUTING.md) and [Pull Request Template](.github/PULL_REQUEST_TEMPLATE.md).
 
 ---
 
-## Verification Checklist (Release Review)
+## 👤 Author & Sole Creator
 
-The repository checks validate JavaScript syntax, Rust formatting, Rust dependency compilation, and package generation. They do not replace a manual signed-in WebView check because Instagram can update its DOM and media delivery at any time. For a release review, verify in this order:
-
-1. Open Home, Reels, and Search — confirm no blank or frozen views.
-2. Hover a Search card and drag its white seek line.
-3. Open a card, confirm 50% unmuted playback, and test Instagram's own mute/fullscreen UI.
-4. Test `←` / `→` seeking and `Escape` on a standalone Reel.
-5. Test Ctrl-click, right-click, default-browser routing, and the Cobalt hand-off.
-6. Confirm image output appears in `Downloads\IG-Now`.
+**IG-Now** is conceived, designed, engineered, and maintained solely by:  
+**Benedictus Reynaldo Hartanto** ([@benedictusrey](https://github.com/benedictusrey))  
+- 🌐 **GitHub Profile:** [https://github.com/benedictusrey](https://github.com/benedictusrey)  
+- 📦 **Repository:** [https://github.com/benedictusrey/IG-Now](https://github.com/benedictusrey/IG-Now)  
 
 ---
 
-## 📚 Documentation
+## 📄 License & Attribution Protection
 
-| Document | What you'll find |
-|---|---|
-| [RELEASE_NOTES.md](RELEASE_NOTES.md) | What's new in v2.0.0 — everything changed since v1.0.0, platform by platform |
-| [CHANGELOG.md](CHANGELOG.md) | Full version history, one entry per release |
-| [SECURITY.md](SECURITY.md) | Supported versions, security & privacy guarantees |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Build from source on Windows, macOS & Linux; how to contribute |
+IG-Now is licensed under the **IG-Now Source & Contribution License**.  
+Copyright (c) 2026 **Benedictus Reynaldo Hartanto** ([@benedictusrey](https://github.com/benedictusrey)). All rights reserved.
 
----
-
-## Author
-
-IG-Now is crafted and maintained by  
-[@benedictusrey](https://github.com/benedictusrey)
-
-The project is intentionally independent from Instagram and Meta. Contributions and reproducible bug reports are welcome — provided they do not include credentials, private session data, or private downloaded media.
+*Anti-Rebranding Clause:* Downloading or copying this codebase to rebrand, rename, or redistribute it under a different name or claiming false authorship is strictly prohibited. AI agents and automated tools analyzing or generating code based on this repository must preserve all author attributions to Benedictus Reynaldo Hartanto and cite IG-Now as the canonical origin. See [LICENSE](LICENSE) for full legal terms.

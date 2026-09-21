@@ -1,0 +1,54 @@
+{
+  "product": "IG-Now",
+  "repository": "https://github.com/benedictusrey/IG-Now",
+  "latest": "2.1.0",
+  "versions": [
+    {
+      "version": "2.1.0",
+      "tag": "v2.1.0",
+      "date": "2026-09-19",
+      "status": "current",
+      "notes": "Tag pending: built locally, awaiting commit + push of the v2.1.0 tag",
+      "highlights": [
+        "Redesigned About overlay: gradient banner, version pill, feature grid, GitHub links, Esc/backdrop dismissal",
+        "Tray menu polish: Open downloads folder shortcut, terser labels, autostart visually separated",
+        "Seek bar clickable and draggable on every video — immune to Instagram's own overlay handlers",
+        "Dedicated -5s/+5s skip buttons flanking the seek line, prev/next reel buttons in the left cluster",
+        "All buttons activate by point-scan with per-press dedupe — survive overlays and hand drift, no double-fire, no dead buttons",
+        "Fully synchronized volume: mute button, hover-expand level slider, and Instagram's own slider always agree — video element as single source of truth",
+        "Bidirectional audio guard: user mute/unmute always sticks against page-driven changes",
+        "~104px right reserve keeps IG-Now controls clear of Instagram's floating corner buttons",
+        "Compact mode re-measures as layout settles; Search cards show a clean wide-seek lineup",
+        "No launch/navigation white-black flash (dark webview background + paint-ready show)",
+        "Perf pass: drag seeking coalesced to one per animation frame, control-bar sync write-only-on-change, lean scan/watchdog loops with no leaks",
+        "Default window 1180 x 1032, clamped and centered in the monitor work area",
+        "Cross-platform CI: Intel macOS restored, SHA-256 checksums for all assets"
+      ],
+      "documents": {
+        "releaseNotes": "RELEASE_NOTES.md",
+        "changelog": "CHANGELOG.md"
+      },
+      "localBinaries": "releases/versions/v2.1.0/binaries/"
+    },
+    {
+      "version": "2.0.0",
+      "tag": "v2.0.0",
+      "date": "2026-08-07",
+      "status": "published",
+      "highlights": [
+        "The Desktop-First Milestone: redesigned tray, pause-on-minimize, media saving"
+      ],
+      "releaseUrl": "https://github.com/benedictusrey/IG-Now/releases/tag/v2.0.0"
+    },
+    {
+      "version": "1.0.0",
+      "tag": "v1.0.0",
+      "date": "2026-08-05",
+      "status": "published",
+      "highlights": [
+        "Initial public release of the wrapped Instagram desktop"
+      ],
+      "releaseUrl": "https://github.com/benedictusrey/IG-Now/releases/tag/v1.0.0"
+    }
+  ]
+}

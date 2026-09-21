@@ -18,8 +18,7 @@ use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_MULTITHREADED,
 };
 use windows::Win32::System::Diagnostics::ToolHelp::{
-    CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
-    TH32CS_SNAPPROCESS,
+    CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
 };
 
 /// PIDs of this process and all its descendants (covers `msedgewebview2.exe`
@@ -79,13 +78,21 @@ unsafe fn set_app_audio_mute_inner(mute: bool) -> bool {
     let tree = process_tree();
     let mut touched = false;
     for i in 0..count {
-        let Ok(session) = sessions.GetSession(i) else { continue };
-        let Ok(control) = session.cast::<IAudioSessionControl2>() else { continue };
-        let Ok(pid) = control.GetProcessId() else { continue };
+        let Ok(session) = sessions.GetSession(i) else {
+            continue;
+        };
+        let Ok(control) = session.cast::<IAudioSessionControl2>() else {
+            continue;
+        };
+        let Ok(pid) = control.GetProcessId() else {
+            continue;
+        };
         if !tree.contains(&pid) {
             continue;
         }
-        let Ok(volume) = session.cast::<ISimpleAudioVolume>() else { continue };
+        let Ok(volume) = session.cast::<ISimpleAudioVolume>() else {
+            continue;
+        };
         if volume.SetMute(mute, std::ptr::null()).is_ok() {
             touched = true;
         }
@@ -146,15 +153,27 @@ pub fn report_audio_state() {
         let tree = process_tree();
         let mut found = 0;
         for i in 0..count {
-            let Ok(session) = sessions.GetSession(i) else { continue };
-            let Ok(control) = session.cast::<IAudioSessionControl2>() else { continue };
-            let Ok(pid) = control.GetProcessId() else { continue };
+            let Ok(session) = sessions.GetSession(i) else {
+                continue;
+            };
+            let Ok(control) = session.cast::<IAudioSessionControl2>() else {
+                continue;
+            };
+            let Ok(pid) = control.GetProcessId() else {
+                continue;
+            };
             if !tree.contains(&pid) {
                 continue;
             }
-            let Ok(volume) = session.cast::<ISimpleAudioVolume>() else { continue };
-            let Ok(muted) = volume.GetMute() else { continue };
-            let Ok(level) = volume.GetMasterVolume() else { continue };
+            let Ok(volume) = session.cast::<ISimpleAudioVolume>() else {
+                continue;
+            };
+            let Ok(muted) = volume.GetMute() else {
+                continue;
+            };
+            let Ok(level) = volume.GetMasterVolume() else {
+                continue;
+            };
             // TRUE audio-flow evidence: the session's peak meter. 0.0 while a
             // video "plays" = the player is outputting silence (player-level
             // mute / WebAudio gain at 0), even though the DOM says unmuted.

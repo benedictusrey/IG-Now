@@ -1,3 +1,8 @@
+// IG-Now — High-Performance Desktop Client for Instagram
+// Sole Author & Creator: Benedictus Reynaldo Hartanto (@benedictusrey)
+// Repository: https://github.com/benedictusrey/IG-Now
+// All rights reserved. See LICENSE for details.
+
 (function () {
   if (window.__ignowMediaToolsInstalled) return;
   window.__ignowMediaToolsInstalled = true;
@@ -8,7 +13,10 @@
     toast: null,
     viewer: null,
     activeVideo: null,
-    videoAudioUnlocked: false
+    videoAudioUnlocked: false,
+    // True while IG-Now itself is assigning `video.muted` — the volumechange
+    // guard must not fight our own assignments (they fire synchronously).
+    volumeGuardSuppressed: false
   };
   const controlActions = new WeakMap();
   const videoControllers = new WeakMap();
@@ -154,7 +162,10 @@
       align-items: center !important;
       gap: 6px !important;
       min-height: 28px !important;
-      padding: 0 12px 12px !important;
+      /* 104px right reserve: Instagram floats its own mute / fullscreen
+         buttons over the video's bottom-right corner. Our controls flex
+         inside the remaining space so the two never overlap (v2.1.0). */
+      padding: 0 104px 12px 12px !important;
       border: 0 !important;
       border-radius: 0 !important;
       background: transparent !important;
@@ -207,14 +218,166 @@
       text-align: right !important;
     }
 
+    /* Mute toggle — lives in the LEFT cluster next to the play button so it
+       can never sit on top of the total-time label (v2.1.0 fix), and so
+       Instagram's own right-side controls (mute, fullscreen) are never
+       overlapped either. It owns a hover-expand LEVEL slider: hover/focus
+       the button (or drag the slider) to reveal a 64px horizontal volume
+       track synchronized with Instagram's own vertical slider (both read
+       and write the video element — single source of truth, v2.1.0). */
+    .ignow-video-controls__volume {
+      flex: 0 0 auto !important;
+      width: 28px !important;
+      height: 26px !important;
+      font-size: 15px !important;
+    }
+
+    /* Level slider — an ABSOLUTE overlay anchored to the right of the mute
+       button: it participates ZERO in flex layout, so the bar's geometry
+       (and above all the seek line's width) is INVARIANT whether the track
+       is open, closed, or mid-transition (a flex participant squeezed the
+       seek line to its 28px minimum and shifted every control by ~56px
+       whenever the track expanded — caught live by the Edge suite). Open
+       state: group hover/focus, or the JS-open class while dragging. */
+    .ignow-video-controls__volume-group {
+      position: relative !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      flex: 0 0 auto !important;
+      gap: 0 !important;
+    }
+
+    .ignow-video-controls__volume-group:hover .ignow-video-controls__volume-slider,
+    .ignow-video-controls__volume-group.ignow-volume-open .ignow-video-controls__volume-slider {
+      width: 64px !important;
+      opacity: 1 !important;
+    }
+
+    .ignow-video-controls__volume-slider {
+      position: absolute !important;
+      left: 32px !important;
+      top: 50% !important;
+      transform: translateY(-50%) !important;
+      flex: 0 0 auto !important;
+      width: 0 !important;
+      min-width: 0 !important;
+      height: 23px !important;
+      min-height: 23px !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      border: 0 !important;
+      border-radius: 999px !important;
+      opacity: 0 !important;
+      overflow: hidden !important;
+      box-sizing: border-box !important;
+      background: linear-gradient(
+        to right,
+        #fff 0%,
+        #fff var(--ignow-volume, 50%),
+        rgba(255, 255, 255, 0.42) var(--ignow-volume, 50%),
+        rgba(255, 255, 255, 0.42) 100%
+      ) !important;
+      background-clip: content-box !important;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.75) !important;
+      cursor: pointer !important;
+      pointer-events: auto !important;
+      appearance: none !important;
+      -webkit-appearance: none !important;
+      accent-color: #fff !important;
+      transition: width 0.16s ease, opacity 0.16s ease !important;
+    }
+
+    .ignow-video-controls__volume-slider::-webkit-slider-runnable-track {
+      height: 3px !important;
+      border: 0 !important;
+      border-radius: 999px !important;
+      background: transparent !important;
+    }
+
+    .ignow-video-controls__volume-slider::-webkit-slider-thumb {
+      width: 10px !important;
+      height: 10px !important;
+      margin-top: -3.5px !important;
+      border: 0 !important;
+      border-radius: 50% !important;
+      background: #fff !important;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.8) !important;
+    }
+
+    .ignow-video-controls__volume-slider:focus-visible {
+      width: 64px !important;
+      opacity: 1 !important;
+      outline: none !important;
+    }
+
+    /* Mute-first users: a muted element shows its audible level on the
+       slider (matches Instagram's native slider behaviour) while the icon
+       carries the muted state. */
+    .ignow-video-controls__volume--muted {
+      color: rgba(255, 255, 255, 0.72) !important;
+    }
+
+    /* Dedicated −5s / +5s seek buttons flanking the progress line — the
+       mouse/touch equivalent of the Left/Right arrow keys. */
+    .ignow-video-controls__skip {
+      flex: 0 0 auto !important;
+      width: auto !important;
+      min-width: 30px !important;
+      padding: 0 5px !important;
+      font: 600 11px/1 "Segoe UI", Arial, sans-serif !important;
+      letter-spacing: 0.02em !important;
+    }
+
+    /* Dedicated previous / next buttons — the mouse/touch equivalent of the
+       Up/Down arrow keys (reel navigation, page scroll elsewhere). */
+    .ignow-video-controls__nav {
+      flex: 0 0 auto !important;
+      width: 28px !important;
+      height: 26px !important;
+      font-size: 14px !important;
+    }
+
+    /* Narrow hosts (Search cards, small embeds): there is no room for the
+       navigation pair OR the seek-skip pair next to Instagram's own
+       controls — hide both (the arrow keys still do both jobs) so the
+       progress line gets the width instead of being squeezed to a sliver.
+       Also drop the wide right reserve, which only exists to clear
+       Instagram's floating corner buttons on large players. */
+    .ignow-video-controls--compact {
+      gap: 4px !important;
+      padding-right: 12px !important;
+    }
+
+    .ignow-video-controls--compact .ignow-video-controls__nav {
+      display: none !important;
+    }
+
+    .ignow-video-controls--compact .ignow-video-controls__skip {
+      display: none !important;
+    }
+
+    /* Compact hosts have no width for a level slider either — the mute
+       toggle and the Up/Down/Left/Right arrows keep doing the job. */
+    .ignow-video-controls--compact .ignow-video-controls__volume-slider {
+      display: none !important;
+    }
+
+    .ignow-video-controls--compact .ignow-video-controls__time {
+      min-width: 30px !important;
+      font-size: 11px !important;
+    }
+
     .ignow-video-controls__progress {
       position: relative !important;
       flex: 1 1 auto !important;
       min-width: 28px !important;
-      height: 3px !important;
-      min-height: 3px !important;
-      margin: 0 !important;
-      padding: 0 !important;
+      /* 3px visual line with a 23px pointer hit area (10px transparent
+         padding, clipped from the background): easy to grab on every video,
+         without growing the visible strip or stealing big page areas. */
+      height: 23px !important;
+      min-height: 23px !important;
+      margin: -10px 0 !important;
+      padding: 10px 0 !important;
       box-sizing: border-box !important;
       border: 0 !important;
       border-radius: 999px !important;
@@ -225,8 +388,10 @@
         rgba(255, 255, 255, 0.42) var(--ignow-progress, 0%),
         rgba(255, 255, 255, 0.42) 100%
       ) !important;
+      background-clip: content-box !important;
       box-shadow: 0 1px 4px rgba(0, 0, 0, 0.75) !important;
-      pointer-events: none !important;
+      cursor: pointer !important;
+      pointer-events: auto !important;
       appearance: none !important;
       -webkit-appearance: none !important;
       accent-color: #fff !important;
@@ -273,21 +438,6 @@
       box-shadow: 0 1px 4px rgba(0, 0, 0, 0.75) !important;
     }
 
-    .ignow-video-controls__progress--search {
-      height: 23px !important;
-      min-height: 23px !important;
-      margin: -10px 0 !important;
-      padding: 10px 0 !important;
-      background-clip: content-box !important;
-      cursor: pointer !important;
-      pointer-events: auto !important;
-    }
-
-    .ignow-video-controls__progress--search:hover {
-      height: 23px !important;
-      min-height: 23px !important;
-    }
-
     .ignow-toast {
       position: fixed;
       right: 18px;
@@ -316,27 +466,244 @@
     return target?.parentElement instanceof Element ? target.parentElement : null;
   }
 
-  function controlButtonFromTarget(target) {
-    return elementFromTarget(target)?.closest?.(".ignow-video-controls button") || null;
+  // Mute changes made by IG-Now itself must not be "corrected" by our own
+  // volumechange guard: the `muted` setter fires `volumechange` SYNCHRONOUSLY,
+  // so a direct `video.muted = ...` assignment inside a control action is
+  // observed by the guard BEFORE the surrounding bookkeeping runs — the guard
+  // then immediately reverted the user's mute click (observed in v2.1.0: the
+  // reel kept playing sound after pressing mute). Setting through this helper
+  // suppresses the guard for exactly that one assignment.
+  function setVideoMuted(video, muted) {
+    state.volumeGuardSuppressed = true;
+    try {
+      video.muted = muted;
+    } finally {
+      state.volumeGuardSuppressed = false;
+    }
   }
 
-  ["pointerdown", "pointerup", "pointercancel", "mousedown", "mouseup"].forEach(type => {
+  // Trusted LEVEL change from IG-Now's volume slider. Writes only
+  // `video.volume` — muted stays whatever it was (dragging to 0 equals
+  // silence without touching the mute flag, mirroring Instagram's own
+  // slider; the level icons keep meaning unmuted states).
+  function setVideoVolume(video, volume) {
+    state.volumeGuardSuppressed = true;
+    try {
+      video.volume = volume;
+    } finally {
+      state.volumeGuardSuppressed = false;
+    }
+  }
+
+  // Once the user presses the volume button for the FIRST time — either
+  // direction — this element's audio is user-owned and the guard defends it
+  // against page-driven changes. (Marking only on unmute left mute-first
+  // users unprotected: the page player un-muted their muted reel right
+  // back — the reported "muted icon but sound keeps playing" bug.)
+  function markAudioUserControlled(video) {
+    video.dataset.ignowAudioUserActivated = "1";
+  }
+
+  function controlButtonFromTarget(target, x, y) {
+    const direct = elementFromTarget(target)?.closest?.(".ignow-video-controls button") || null;
+    if (direct && controlActions.has(direct)) return direct;
+    // Same overlay-proofing as the seek line: find our button beneath a
+    // covering page layer at the click point.
+    if (typeof x === "number" && typeof y === "number" && document.elementsFromPoint) {
+      for (const element of document.elementsFromPoint(x, y)) {
+        const button = element?.closest?.(".ignow-video-controls button");
+        if (button && controlActions.has(button)) return button;
+      }
+    }
+    return null;
+  }
+
+  // Pointer events on the bar that we do not otherwise handle are isolated
+  // at the window capture level so Instagram's gesture layers never see them.
+  // NOTE: pointerdown/pointerup are deliberately NOT here — the activation
+  // handlers below own them (a stopImmediatePropagation here would kill
+  // every later window-capture listener, including the activation and seek
+  // handlers — a real bug the regression harness caught).
+  ["pointercancel", "mousedown", "mouseup"].forEach(type => {
     window.addEventListener(type, event => {
-      const button = controlButtonFromTarget(event.target);
-      if (!button || !controlActions.has(button)) return;
+      const element = elementFromTarget(event.target);
+      if (!element?.closest?.(".ignow-video-controls")) return;
+      if (element.closest?.(".ignow-video-controls__progress")) return;
+      if (element.closest?.(".ignow-video-controls__volume-slider")) return;
       event.stopImmediatePropagation();
     }, true);
   });
 
-  window.addEventListener("click", event => {
-    const button = controlButtonFromTarget(event.target);
-    const action = button ? controlActions.get(button) : null;
+  // BUTTON ACTIVATION — window-capture pointer pair resolved by POINT, not
+  // by event target (final v2.1.0 hardening; probed live on the binary).
+  // The seek line always worked on real Instagram while every button died,
+  // and the difference was resolution mode: the seek path scans the full
+  // element stack at the pointer position, so gradient scrims / portal
+  // overlays stacked ABOVE the bar never mattered — while the buttons gated
+  // on `event.target` being inside the bar and re-resolved at the release
+  // point. An overlay target (J4) or a real hand's 1–3px drift between
+  // press and release (J3) silently dropped the press; pressing one button
+  // and sliding to a neighbor even fired the WRONG one (J6). Buttons now
+  // use the model that made the seek line bulletproof:
+  //   pointerdown — isolate the press, remember the button resolved BY POINT
+  //   pointerup   — fire the PRESSED button when the release stays on/next
+  //                 to it (small slop for hand drift); a release over a
+  //                 different button or a real drag-away cancels like a
+  //                 native button; nothing leaks toward the page either way
+  //   click       — the synthetic click of a handled press is swallowed
+  //                 exactly once (it may target the bar, the gap, or a page
+  //                 overlay above the bar — never Instagram). Keyboard
+  //                 activation (Enter/Space — no pointer press) still runs.
+  let pendingPointerPress = null; // { button, pointerId } while the finger is down
+  let suppressedClick = null; // { at } arms ONE swallow for a handled press
+  let pressOnOurBarId = null; // pointerId of a press that started on our bar
+
+  // Release tolerance for hand drift. Safe to be generous: slop applies
+  // ONLY when the release resolves to no button at all — a release over any
+  // real button resolves to that button and must equal the pressed one, so
+  // a wide slop can never fire the wrong control. 24px covers the bar's own
+  // padding plus a few px past its edge (probed: a release 3px below the
+  // bar is ~17px below the button).
+  const PRESS_SLOP_PX = 24;
+  // The UA generates a press's click synchronously in the input pipeline
+  // (single-digit ms, even on janky pages — it is not subject to page JS).
+  // 150ms is a safe upper bound for receiving it, and far below human
+  // follow-up timing, so a stale swallow can never eat the user's NEXT
+  // click (e.g. after a release outside the content area, which produces
+  // no click at all — harness-verified failure mode).
+  const CLICK_SWALLOW_WINDOW_MS = 150;
+
+  // Our progress line / volume slider under the point (seek and volume
+  // paths own them — never isolate their events here or the window-capture
+  // delegation below dies).
+  function progressBarFromPoint(x, y) {
+    if (typeof x === "number" && typeof y === "number" && document.elementsFromPoint) {
+      for (const element of document.elementsFromPoint(x, y)) {
+        const input = element?.closest?.(".ignow-video-controls__progress");
+        if (input && seekDelegates.has(input)) return input;
+      }
+    }
+    return null;
+  }
+
+  function volumeSliderFromPoint(x, y) {
+    if (typeof x === "number" && typeof y === "number" && document.elementsFromPoint) {
+      for (const element of document.elementsFromPoint(x, y)) {
+        const input = element?.closest?.(".ignow-video-controls__volume-slider");
+        if (input && seekDelegates.has(input)) return input;
+      }
+    }
+    return null;
+  }
+
+  function releaseWithinSlop(button, x, y) {
+    const rect = button.getBoundingClientRect();
+    return x >= rect.left - PRESS_SLOP_PX && x <= rect.right + PRESS_SLOP_PX
+      && y >= rect.top - PRESS_SLOP_PX && y <= rect.bottom + PRESS_SLOP_PX;
+  }
+
+  function armClickSwallow() {
+    suppressedClick = { at: Date.now() };
+  }
+
+  function runControlAction(button) {
+    const action = controlActions.get(button);
     if (!action) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
     Promise.resolve(action()).catch(error => {
       console.warn("IG-Now video control action failed:", error);
     });
+  }
+
+  window.addEventListener("pointerdown", event => {
+    // Seek and volume-slider paths own presses on their inputs — never
+    // isolate them (a stopImmediatePropagation here would kill the
+    // delegation below; the seek line taught us this in Round 2).
+    // Target check first (works everywhere), point scan second (covers
+    // page overlays sitting above the line in production).
+    if (elementFromTarget(event.target)?.closest?.(".ignow-video-controls__progress, .ignow-video-controls__volume-slider")) return;
+    if (progressBarFromPoint(event.clientX, event.clientY)) return;
+    if (volumeSliderFromPoint(event.clientX, event.clientY)) return;
+    // POINT resolution: find our button beneath whatever layer the pointer
+    // is over — event.target may be a page overlay sitting above the bar.
+    const button = controlButtonFromTarget(event.target, event.clientX, event.clientY);
+    const overOurBar = button
+      || (elementFromTarget(event.target)?.closest?.(".ignow-video-controls"));
+    if (!overOurBar) return;
+    if (event.button !== 0 && event.pointerType === "mouse") return;
+    // Isolate the press from Instagram's layers AND from our own later
+    // listeners (nothing else may react to a press on our bar). We do
+    // NOT preventDefault: canceling pointerdown suppresses the default
+    // activation behavior in production WebView2 — the user gesture our
+    // own action needs to resume audio (observed: seek/volume worked but
+    // play never did; Playwright's relaxed autoplay flags masked it).
+    event.stopImmediatePropagation();
+    pressOnOurBarId = event.pointerId; // even a gap press stays ours end-to-end
+    pendingPointerPress = button ? { button, pointerId: event.pointerId } : null;
+  }, true);
+
+  window.addEventListener("pointerup", event => {
+    const barPressId = pressOnOurBarId;
+    pressOnOurBarId = null;
+    const press = pendingPointerPress;
+    pendingPointerPress = null;
+    if (barPressId === null || event.pointerId !== barPressId) return;
+    if (event.button !== 0 && event.pointerType === "mouse") return;
+    // No preventDefault (same user-activation reason as pointerdown).
+    event.stopImmediatePropagation();
+    const releaseButton = controlButtonFromTarget(event.target, event.clientX, event.clientY);
+    // Fire the PRESSED button: release over it, or drifted only a hand's
+    // width off it. A different button under the release, or a real
+    // drag-away, cancels — like a native button.
+    if (press) {
+      const fired = releaseButton === press.button
+        || (!releaseButton && releaseWithinSlop(press.button, event.clientX, event.clientY));
+      if (fired) runControlAction(press.button);
+    }
+    // The synthetic click lands on whatever is under the RELEASE point —
+    // the bar, a gap, or a page overlay above the bar. Arm the swallow so
+    // a handled press can never leak into Instagram (e.g. a scrim click
+    // toggling playback under our button).
+    armClickSwallow();
+  }, true);
+
+  window.addEventListener("pointercancel", event => {
+    if (pendingPointerPress && event.pointerId === pendingPointerPress.pointerId) {
+      pendingPointerPress = null;
+    }
+    if (event.pointerId === pressOnOurBarId) pressOnOurBarId = null;
+  }, true);
+  window.addEventListener("blur", () => {
+    pendingPointerPress = null; // alt-tab mid-press: abandon like native
+    pressOnOurBarId = null;
+  });
+
+  // Clicks inside the control bar are still fully isolated so Instagram's
+  // video-area click handler never toggles playback. If the click belongs to
+  // a pointer press we already activated, it is swallowed ONCE (consumed) as
+  // the browser's synthetic duplicate; keyboard-activated clicks (Enter/
+  // Space) have no pointer press and always run.
+  window.addEventListener("click", event => {
+    // First: the synthetic click of a press we just handled may target the
+    // bar, the gap, or a page overlay above the bar — swallow it once.
+    // Time-boxed: the UA generates a press's click within milliseconds, so
+    // a swallow older than the window is stale (e.g. the press released
+    // OUTSIDE the content area, which produces no click at all) and must
+    // never eat a later, unrelated user click. A late click still clears
+    // the stale state.
+    if (suppressedClick) {
+      const stale = Date.now() - suppressedClick.at > CLICK_SWALLOW_WINDOW_MS;
+      suppressedClick = null; // exactly one swallow per handled press
+      if (!stale) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+    }
+    if (!elementFromTarget(event.target)?.closest?.(".ignow-video-controls")) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const button = controlButtonFromTarget(event.target, event.clientX, event.clientY);
+    if (button) runControlAction(button); // keyboard clicks (Enter/Space) land here
   }, true);
 
   window.addEventListener("dblclick", event => {
@@ -344,6 +711,113 @@
     event.preventDefault();
     event.stopImmediatePropagation();
   }, true);
+
+  // ── Seek-line delegation (window capture phase) ─────────────────────────
+  // ROOT CAUSE of the unclickable seek bar (v2.1.0): Instagram registers
+  // capture-phase pointer handlers on document/window that call
+  // stopPropagation(); capture runs BEFORE target-phase listeners, so any
+  // listener attached to the seek line itself could be silently skipped.
+  // Handling pointerdown/move/up/cancel HERE at the window capture level runs
+  // ahead of every page handler and cannot be intercepted. The per-video
+  // install registers its line in `seekDelegates`; these delegates resolve
+  // the fraction from clientX and seek the owning video.
+  const seekDelegates = new WeakMap();
+  const activePointerSeeks = new Map();
+  // Latest pointer position of an active seek drag — read inside the rAF
+  // coalescer above (v2.1.0). Cleared with the drag in stopPointerSeek.
+  const lastPointerSeekByPointerId = new Map();
+
+  function seekInputFromTarget(target, x, y) {
+    // Matches BOTH delegated inputs: the seek line and the volume level
+    // slider share this window-capture pointer path (v2.1.0).
+    const direct = elementFromTarget(target)?.closest?.(
+      ".ignow-video-controls__progress, .ignow-video-controls__volume-slider"
+    ) || null;
+    if (direct && seekDelegates.has(direct)) return direct;
+    // A page overlay (e.g. an Instagram gesture layer) may sit ABOVE the seek
+    // line, making the event target the overlay instead of the line. Scan the
+    // full element stack at the point to find our line beneath it. Runs only
+    // on pointerdown (never per-move), so the cost is negligible.
+    if (typeof x === "number" && typeof y === "number" && document.elementsFromPoint) {
+      for (const element of document.elementsFromPoint(x, y)) {
+        const input = element?.closest?.(
+          ".ignow-video-controls__progress, .ignow-video-controls__volume-slider"
+        );
+        if (input && seekDelegates.has(input)) return input;
+      }
+    }
+    return null;
+  }
+
+  function seekViaDelegate(input, clientX) {
+    const delegate = seekDelegates.get(input);
+    if (!delegate) return;
+    const rect = input.getBoundingClientRect();
+    if (!rect.width) return;
+    delegate.activate();
+    delegate.seek(Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)));
+  }
+
+  window.addEventListener("pointerdown", event => {
+    const input = seekInputFromTarget(event.target, event.clientX, event.clientY);
+    if (!input) return;
+    if (event.button !== 0 && event.pointerType === "mouse") return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    try {
+      input.setPointerCapture?.(event.pointerId);
+    } catch (error) {
+      console.warn("IG-Now could not capture the pointer for seeking:", error);
+    }
+    activePointerSeeks.set(event.pointerId, input);
+    lastPointerSeekByPointerId.set(event.pointerId, { input, clientX: event.clientX });
+    seekViaDelegate(input, event.clientX);
+  }, true);
+
+  // Coalesce drag seeking to ONE seek per animation frame: pointermove can
+  // fire at 100+ Hz while the display repaints at ~60 Hz, so every in-between
+  // move did a getBoundingClientRect + fastSeek/currentTime + full sync() that
+  // was discarded before it could ever be painted — measurable layout and
+  // paint pressure on mid-range machines during seek drags (v2.1.0 perf fix).
+  // rAF runs identically in jsdom (`pretendToBeVisual`), so the harnesses lock
+  // the semantics in.
+  let seekFramePending = false;
+  window.addEventListener("pointermove", event => {
+    const input = activePointerSeeks.get(event.pointerId);
+    if (!input) return;
+    // Record the LATEST position first, then coalesce: the rAF callback must
+    // always read the most recent move, never a stale one (the first draft
+    // scheduled the frame but never refreshed the entry — drags would have
+    // re-seeked to the press position forever).
+    lastPointerSeekByPointerId.set(event.pointerId, { input, clientX: event.clientX });
+    if (seekFramePending) return;
+    seekFramePending = true;
+    requestAnimationFrame(() => {
+      seekFramePending = false;
+      const seek = lastPointerSeekByPointerId.get(event.pointerId);
+      if (!seek) return;
+      seekViaDelegate(seek.input, seek.clientX);
+    });
+  }, true);
+
+  const stopPointerSeek = event => {
+    const input = activePointerSeeks.get(event.pointerId);
+    if (!input) return;
+    activePointerSeeks.delete(event.pointerId);
+    lastPointerSeekByPointerId.delete(event.pointerId);
+    try {
+      input.releasePointerCapture?.(event.pointerId);
+    } catch (error) {
+      console.warn("IG-Now could not release the seek pointer:", error);
+    }
+    // Optional per-delegate end hook (the volume slider collapses itself;
+    // the seek delegate has none).
+    seekDelegates.get(input)?.release?.();
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+  window.addEventListener("pointerup", stopPointerSeek, true);
+  window.addEventListener("pointercancel", stopPointerSeek, true);
 
   function isVisible(element) {
     if (!(element instanceof Element)) return false;
@@ -408,7 +882,7 @@
     if (isSearchCardVideo(media)) {
       state.videoAudioUnlocked = true;
       media.volume = 0.2;
-      media.muted = true;
+      setVideoMuted(media, true);
     } else {
       activateVideoAudio(media);
     }
@@ -432,7 +906,17 @@
   }
 
   function defaultVolumeForVideo(video) {
-    return isSearchCardVideo(video) ? 0.2 : 0.5;
+    return isSearchCardVideo(video) ? 0.1 : 0.5;
+  }
+
+  // Speaker icon for an AUDIBLE state, by level — mirrors how Instagram's
+  // own icon reacts to its native slider (muted is handled separately with
+  // the crossed-out icon).
+  function audibleIconForVolume(volume) {
+    const level = Number.isFinite(volume) ? Math.max(0, Math.min(1, volume)) : 0.5;
+    if (level < 0.34) return "\uD83D\uDD08"; // speaker with one wave
+    if (level < 0.67) return "\uD83D\uDD09"; // speaker with medium waves
+    return "\uD83D\uDD0A";                    // speaker with three waves
   }
 
   function applyDefaultVideoAudio(video) {
@@ -442,7 +926,10 @@
     if (video.dataset.ignowAudioProfile === profileKey) return;
     try {
       video.volume = defaultVolumeForVideo(video);
-      if (isSearchCardVideo(video)) video.muted = true;
+      // Never clobber audio the user explicitly took control of.
+      if (isSearchCardVideo(video) && video.dataset.ignowAudioUserActivated !== "1") {
+        setVideoMuted(video, true);
+      }
       video.dataset.ignowAudioProfile = profileKey;
     } catch (error) {
       console.warn("IG-Now could not apply the video audio default:", error);
@@ -453,9 +940,13 @@
     if (!(video instanceof HTMLVideoElement)) return;
     try {
       state.videoAudioUnlocked = true;
+      // An element the user explicitly muted stays muted — auto-unlock must
+      // never override the user's own volume-button choice.
+      if (video.dataset.ignowAudioUserActivated === "1") return;
       video.volume = defaultVolumeForVideo(video);
-      video.muted = false;
+      setVideoMuted(video, false);
       video.dataset.ignowAudioUserActivated = "1";
+      video.dataset.ignowMutedByIgnow = "";
     } catch (error) {
       console.warn("IG-Now could not enable video audio after the user gesture:", error);
     }
@@ -499,6 +990,10 @@
     videoControllers.get(video)?.seek?.(seconds);
   }
 
+  function reelPageStep() {
+    return Math.max(400, window.innerHeight || 720);
+  }
+
   function navigateReel(deltaY) {
     const video = activeVideoForKeyboard();
     const target = video || document.scrollingElement || document.body;
@@ -508,9 +1003,36 @@
       deltaMode: 0,
       deltaY
     });
+    // Marker consumed by our own keydown capture below: the ArrowDown/Up
+    // fallback we dispatch here must NOT re-enter navigateReel (loop guard).
+    wheelEvent.__ignowSyntheticNavigation = true;
     target.dispatchEvent(wheelEvent);
     if (window.scrollBy && !wheelEvent.defaultPrevented) {
+      const before = window.scrollY;
       window.scrollBy({ top: deltaY, behavior: "smooth" });
+      // Synthetic wheel events cannot drive Instagram's slide-based reel
+      // viewer (it reacts to real input or its own keyboard layer), and
+      // scrollBy is a no-op when the viewer doesn't scroll. If the view did
+      // not move, hand the navigation to Instagram's OWN arrow-key handling —
+      // the exact path the Up/Down arrow keys use, which works everywhere
+      // the user can navigate. Dispatched through the real pipeline so
+      // capture and bubble listeners both see it.
+      window.setTimeout(() => {
+        if (Math.abs(window.scrollY - before) < 4) {
+          const goingDown = deltaY > 0;
+          const fallback = new KeyboardEvent("keydown", {
+            key: goingDown ? "ArrowDown" : "ArrowUp",
+            code: goingDown ? "ArrowDown" : "ArrowUp",
+            bubbles: true,
+            cancelable: true
+          });
+          fallback.__ignowSyntheticNavigation = true;
+          const origin = document.activeElement instanceof Element
+            ? document.activeElement
+            : document.body;
+          origin.dispatchEvent(fallback);
+        }
+      }, 220);
     }
   }
 
@@ -805,7 +1327,7 @@
       console.warn("IG-Now could not copy the Instagram post link:", error);
     }
 
-    let downloadFolder = "Downloads\\IG-Now";
+    let downloadFolder = "your Downloads/IG-Now folder";
     if (typeof invoke === "function") {
       try {
         downloadFolder = await invoke("prepare_download_folder");
@@ -1129,7 +1651,7 @@
         {
           label: kind === "video"
             ? "Copy link and open Cobalt"
-            : "Save image to Downloads\\IG-Now",
+            : "Save image to your Downloads/IG-Now folder",
           action: () => saveMedia(media)
         },
         {
@@ -1146,7 +1668,18 @@
 
   window.addEventListener("keydown", event => {
     const target = elementFromTarget(event.target);
-    if (target?.matches?.("input, textarea, [contenteditable=true]")) return;
+    if (target?.matches?.("input, textarea, [contenteditable=true]")) {
+      // Arrow keys belong to the volume slider while it has keyboard focus
+      // (tabIndex -1 keeps it out of Tab order; the mute button stays the
+      // focus entry). Guarded by class: Instagram's comment box, search box,
+      // and every other host input keep the keys reserved for typing.
+      if (target?.classList?.contains("ignow-video-controls__volume-slider")
+        && (event.key === "ArrowLeft" || event.key === "ArrowRight"
+          || event.key === "ArrowUp" || event.key === "ArrowDown")) {
+        return;
+      }
+      return;
+    }
 
     if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
       const video = activeVideoForKeyboard();
@@ -1157,11 +1690,11 @@
       return;
     }
 
+    if (event.__ignowSyntheticNavigation) return; // our own fallback — never re-navigate
     if (isStandaloneReelPage() && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
       event.preventDefault();
       event.stopImmediatePropagation();
-      const pageStep = Math.max(400, window.innerHeight || 720);
-      navigateReel(event.key === "ArrowUp" ? -pageStep : pageStep);
+      navigateReel(event.key === "ArrowUp" ? -reelPageStep() : reelPageStep());
     }
   }, true);
 
@@ -1222,6 +1755,38 @@
     };
 
     const playButton = createButton("\u25B6", "Play video");
+    const volumeButton = createButton("\uD83D\uDD0A", "Mute video (drag or hover for volume slider)");
+    volumeButton.className = "ignow-video-controls__volume";
+    // Volume LEVEL slider (v2.1.0): hover/focus the mute button or drag the
+    // track to reveal it; bidirectionally synchronized with Instagram's own
+    // slider through the video element (single source of truth).
+    const volumeGroup = document.createElement("div");
+    volumeGroup.className = "ignow-video-controls__volume-group";
+    const volumeSlider = document.createElement("input");
+    volumeSlider.type = "range";
+    volumeSlider.className = "ignow-video-controls__volume-slider";
+    volumeSlider.min = "0";
+    volumeSlider.max = "100";
+    volumeSlider.step = "1";
+    volumeSlider.value = "50";
+    // Natively tabbable like the seek line (input default): a keyboard user
+    // reaches it with Tab and adjusts with the arrows (the global keydown
+    // seek handler deliberately yields to it — see the class guard there).
+    volumeSlider.setAttribute("role", "slider");
+    volumeSlider.setAttribute("aria-label", "Video volume level");
+    volumeSlider.setAttribute("aria-valuemin", "0");
+    volumeSlider.setAttribute("aria-valuemax", "100");
+    volumeSlider.setAttribute("aria-valuenow", "50");
+    volumeSlider.style.setProperty("--ignow-volume", "50%");
+    volumeGroup.append(volumeButton, volumeSlider);
+    const rewindButton = createButton("\u22125s", "Back 5 seconds (Left arrow)");
+    rewindButton.className = "ignow-video-controls__skip";
+    const forwardButton = createButton("+5s", "Forward 5 seconds (Right arrow)");
+    forwardButton.className = "ignow-video-controls__skip";
+    const prevButton = createButton("\u23EE", "Previous reel or scroll up (Up arrow)");
+    prevButton.className = "ignow-video-controls__nav";
+    const nextButton = createButton("\u23ED", "Next reel or scroll down (Down arrow)");
+    nextButton.className = "ignow-video-controls__nav";
     const elapsedLabel = document.createElement("span");
     elapsedLabel.className = "ignow-video-controls__time";
     elapsedLabel.textContent = "0:00";
@@ -1236,9 +1801,7 @@
     progressLine.setAttribute("role", "slider");
     progressLine.setAttribute(
       "aria-label",
-      isSearchCardVideo(video)
-        ? "Video progress; click or drag to seek"
-        : "Video progress; use the left and right arrow keys to seek"
+      "Video progress; click or drag the white line to seek"
     );
     progressLine.setAttribute("aria-valuemin", "0");
     progressLine.setAttribute("aria-valuemax", "100");
@@ -1249,8 +1812,37 @@
     totalLabel.className = "ignow-video-controls__time ignow-video-controls__time--total";
     totalLabel.textContent = "0:00";
 
-    controls.append(playButton, elapsedLabel, progressLine, totalLabel);
+    // Order: play + volume + previous / next (LEFT cluster) | elapsed | −5s |
+    // seek | +5s | total. Every IG-Now control lives in the bar's left half —
+    // Instagram floats its own mute/fullscreen buttons over the bottom-right
+    // corner of the video, so the right edge is reserved (104px padding) and
+    // never overlapped (v2.1.0 layout fix).
+    controls.append(
+      playButton,
+      volumeGroup,
+      prevButton,
+      nextButton,
+      elapsedLabel,
+      rewindButton,
+      progressLine,
+      forwardButton,
+      totalLabel
+    );
+    // Compact mode: Search cards (muted hover previews) and narrow players
+    // have no room for the navigation and skip pairs — they are hidden and
+    // the arrow keys keep doing both jobs, leaving the progress line the
+    // width. Measured from the VIDEO's rect (clientWidth is 0 for un-laid-
+    // out hosts and would falsely compact) and RE-EVALUATED on every sync:
+    // Instagram mounts media before layout settles, so a width decided once
+    // at install time sticks wrong (observed: a 542px dialog stuck with the
+    // compact bar, prev/next missing entirely — reads as "buttons dead").
     host.appendChild(controls);
+    const updateCompactMode = () => {
+      const width = video.getBoundingClientRect().width;
+      const shouldCompact = isSearchCardVideo(video) || (width > 0 && width < 380);
+      controls.classList.toggle("ignow-video-controls--compact", shouldCompact);
+    };
+    updateCompactMode();
 
     const formatVideoTime = seconds => {
       if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
@@ -1268,17 +1860,30 @@
       pauseOtherVideos(video);
     }
 
+    // Streams may report duration NaN/Infinity while buffered ranges already
+    // know the playable end — fall back to seekable so the seek line keeps
+    // working during those windows.
+    const effectiveDuration = () => {
+      if (Number.isFinite(video.duration) && video.duration > 0) return video.duration;
+      try {
+        if (video.seekable && video.seekable.length > 0) {
+          const end = video.seekable.end(video.seekable.length - 1);
+          if (Number.isFinite(end) && end > 0) return end;
+        }
+      } catch (error) {
+        console.warn("IG-Now could not read the buffered duration:", error);
+      }
+      return 0;
+    };
+
+    // The aria-label is already set once at construction above — sync never
+    // rewrites constant attributes (v2.1.0 perf fix).
     const sync = () => {
+      // The seek line's aria-label is CONSTANT — set it once (below), not on
+      // every timeupdate (~4×/s per video): sync must not write attributes
+      // that never change (v2.1.0 perf fix).
       applyDefaultVideoAudio(video);
-      const searchCard = isSearchCardVideo(video);
-      progressLine.classList.toggle("ignow-video-controls__progress--search", searchCard);
-      progressLine.setAttribute(
-        "aria-label",
-        searchCard
-          ? "Video progress; click or drag to seek"
-          : "Video progress; use the left and right arrow keys to seek"
-      );
-      const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+      const duration = effectiveDuration();
       const progress = duration > 0
         ? Math.max(0, Math.min(1, video.currentTime / duration))
         : 0;
@@ -1293,8 +1898,9 @@
     };
 
     const seekBy = seconds => {
-      if (!Number.isFinite(video.duration) || video.duration <= 0) return;
-      const nextTime = Math.max(0, Math.min(video.duration, video.currentTime + seconds));
+      const duration = effectiveDuration();
+      if (!(duration > 0)) return;
+      const nextTime = Math.max(0, Math.min(duration, video.currentTime + seconds));
       try {
         if (typeof video.fastSeek === "function") video.fastSeek(nextTime);
       } catch (error) {
@@ -1309,8 +1915,9 @@
     };
 
     const seekToFraction = fraction => {
-      if (!isSearchCardVideo(video) || !Number.isFinite(video.duration) || video.duration <= 0) return;
-      const nextTime = Math.max(0, Math.min(1, fraction)) * video.duration;
+      const duration = effectiveDuration();
+      if (!(duration > 0)) return;
+      const nextTime = Math.max(0, Math.min(1, fraction)) * duration;
       try {
         if (typeof video.fastSeek === "function") video.fastSeek(nextTime);
       } catch (error) {
@@ -1319,15 +1926,104 @@
       try {
         video.currentTime = nextTime;
       } catch (error) {
-        console.warn("IG-Now could not seek this Search video:", error);
+        console.warn("IG-Now could not seek this video:", error);
       }
       sync();
     };
 
+    // Volume: the video element is the SINGLE SOURCE OF TRUTH. The mute
+    // button flips `muted`; the level slider writes `volume`; and every
+    // `volumechange` — ours, Instagram's native slider, the page player —
+    // re-mirrors the element state back into the UI. IG-Now's icon/track and
+    // Instagram's own vertical slider can therefore never disagree, in
+    // either direction (v2.1.0 synchronization).
+    // The icon reflects the AUDIBLE level (muted counts as off), matching
+    // how Instagram's own icon reacts to its native slider.
+    const volumeSliderSync = () => {
+      const level = video.muted ? 0 : video.volume;
+      const pct = Math.round(Math.max(0, Math.min(1, level)) * 100);
+      volumeSlider.value = String(pct);
+      volumeSlider.setAttribute("aria-valuenow", String(pct));
+      volumeSlider.setAttribute("aria-valuetext", `${pct}%`);
+      volumeSlider.style.setProperty("--ignow-volume", `${pct}%`);
+    };
+    const syncVolume = () => {
+      const muted = video.muted;
+      volumeButton.textContent = muted ? "\uD83D\uDD07" : audibleIconForVolume(video.volume);
+      volumeButton.title = muted ? "Unmute video" : "Mute video";
+      volumeButton.setAttribute("aria-label", volumeButton.title);
+      volumeButton.setAttribute("aria-pressed", String(!muted));
+      volumeButton.classList.toggle("ignow-video-controls__volume--muted", muted);
+      volumeSliderSync();
+    };
+    controlActions.set(volumeButton, () => {
+      state.activeVideo = video;
+      try {
+        // Route through setVideoMuted: the muted setter fires `volumechange`
+        // SYNCHRONOUSLY, and without the suppression flag our own guard would
+        // revert this assignment before the bookkeeping below runs (that was
+        // the "muted icon but sound keeps playing" bug).
+        setVideoMuted(video, !video.muted);
+        markAudioUserControlled(video);
+        if (!video.muted) {
+          state.videoAudioUnlocked = true;
+          video.dataset.ignowMutedByIgnow = "";
+          if (video.volume < 0.1) video.volume = defaultVolumeForVideo(video);
+          if (video.paused && !isSearchCardVideo(video)) video.play().catch(() => {});
+        } else {
+          video.dataset.ignowMutedByIgnow = "1";
+        }
+      } catch (error) {
+        console.warn("IG-Now could not toggle the video mute:", error);
+      }
+      syncVolume();
+    });
+
+    // The volume slider shares the seek line's bulletproof pointer path:
+    // the window-capture delegation resolves it BY POINT (overlay-proof),
+    // captures the pointer, and rAF-coalesces drags (see the seek section).
+    // Writes go through setVideoVolume — `muted` is never touched, so a
+    // chosen mute state survives level adjustments; silent-at-zero behaves
+    // exactly like Instagram's own slider (drag to the far left = silent,
+    // drag back = audible again).
+    seekDelegates.set(volumeSlider, {
+      activate: () => {
+        state.activeVideo = video;
+        // Hold the track open for the whole drag: pointer capture can carry
+        // the pointer off the group (hover ends, the class keeps it open).
+        volumeGroup.classList.add("ignow-volume-open");
+      },
+      // Pointer drags end by BLURRING the slider: Chromium keeps :focus-visible
+      // on range inputs after a mouse-initiated focus, which would otherwise
+      // leave the track permanently expanded — squeezing the seek line and
+      // shifting the bar layout until the next click elsewhere (observed in
+      // the Edge suite: the seek line shrank to its 28px minimum after one
+      // volume drag). Keyboard use never pointer-downs, so arrows users are
+      // unaffected and keep the expanded track while focused.
+      release: () => {
+        volumeGroup.classList.remove("ignow-volume-open");
+        try {
+          volumeSlider.blur(); // drop :focus-visible so the track collapses
+        } catch (error) {
+          console.warn("IG-Now could not collapse the volume slider:", error);
+        }
+      },
+      seek: fraction => {
+        try {
+          setVideoVolume(video, Math.max(0, Math.min(1, fraction)));
+          markAudioUserControlled(video);
+          state.videoAudioUnlocked = true;
+        } catch (error) {
+          console.warn("IG-Now could not set the video volume:", error);
+        }
+        syncVolume();
+      }
+    });
+
     const startSearchHoverPreview = () => {
       if (!isSearchCardVideo(video)) return;
-      video.volume = 0.2;
-      video.muted = true;
+      video.volume = 0.1;
+      setVideoMuted(video, true);
       pauseOtherVideos(video);
       video.play().catch(() => {});
       sync();
@@ -1345,8 +2041,8 @@
     const toggle = () => {
       state.activeVideo = video;
       if (isSearchCardVideo(video)) {
-        video.volume = 0.2;
-        video.muted = true;
+        video.volume = 0.1;
+        setVideoMuted(video, true);
       } else {
         activateVideoAudio(video);
       }
@@ -1356,46 +2052,32 @@
 
     videoControllers.set(video, { seek: seekBy, toggle, refresh: sync });
     controlActions.set(playButton, toggle);
-    progressLine.addEventListener("input", event => {
-      if (!isSearchCardVideo(video)) return;
-      event.preventDefault();
-      event.stopPropagation();
+    controlActions.set(rewindButton, () => {
       state.activeVideo = video;
-      seekToFraction(Number(progressLine.value) / 100);
-    }, true);
-
-    let pointerSeeking = false;
-    const seekFromPointer = event => {
-      const rect = progressLine.getBoundingClientRect();
-      if (!rect.width) return;
-      seekToFraction((event.clientX - rect.left) / rect.width);
-    };
-    progressLine.addEventListener("pointerdown", event => {
-      if (!isSearchCardVideo(video)) return;
-      event.preventDefault();
-      event.stopPropagation();
-      pointerSeeking = true;
+      seekBy(-5);
+    });
+    controlActions.set(forwardButton, () => {
       state.activeVideo = video;
-      progressLine.setPointerCapture?.(event.pointerId);
-      seekFromPointer(event);
-    }, true);
-    progressLine.addEventListener("pointermove", event => {
-      if (!pointerSeeking) return;
-      event.preventDefault();
-      event.stopPropagation();
-      seekFromPointer(event);
-    }, true);
-    const stopPointerSeeking = event => {
-      if (!pointerSeeking) return;
-      pointerSeeking = false;
-      progressLine.releasePointerCapture?.(event.pointerId);
-      event.stopPropagation();
-    };
-    progressLine.addEventListener("pointerup", stopPointerSeeking, true);
-    progressLine.addEventListener("pointercancel", stopPointerSeeking, true);
-    progressLine.addEventListener("lostpointercapture", () => {
-      pointerSeeking = false;
-    }, true);
+      seekBy(5);
+    });
+    controlActions.set(prevButton, () => {
+      state.activeVideo = video;
+      navigateReel(-reelPageStep());
+    });
+    controlActions.set(nextButton, () => {
+      state.activeVideo = video;
+      navigateReel(reelPageStep());
+    });
+    // The seek line itself gets NO element-level pointer listeners: the
+    // window-capture delegation above is the single pointer path (see the
+    // ROOT CAUSE note there). Registering here keeps the delegate paired
+    // with this video even after Instagram re-parents the controls.
+    seekDelegates.set(progressLine, {
+      activate: () => {
+        state.activeVideo = video;
+      },
+      seek: seekToFraction
+    });
 
     ["click", "dblclick", "pointerdown", "pointermove", "pointerup", "pointercancel", "input", "change"]
       .forEach(type => {
@@ -1407,8 +2089,41 @@
     });
 
     video.addEventListener("timeupdate", sync);
-    video.addEventListener("loadedmetadata", sync);
+    video.addEventListener("loadedmetadata", () => {
+      updateCompactMode();
+      sync();
+    });
     video.addEventListener("durationchange", sync);
+    video.addEventListener("playing", updateCompactMode);
+    video.addEventListener("volumechange", () => {
+      try {
+        // BIDIRECTIONAL guard (v2.1.0): once the USER has taken control of
+        // this element's audio, Instagram's player may neither re-mute it
+        // (the old fight-back) nor silently UNMUTE it after the user pressed
+        // our mute button (observed in the field: the reel kept playing sound
+        // with a muted icon — the player controller un-muted right back).
+        // IG-Now's own assignments are exempt via the suppression flag, and
+        // site-muted neighbours / untouched autoplay elements are never
+        // touched.
+        if (!state.volumeGuardSuppressed && !isSearchCardVideo(video)) {
+          const userControlled = video.dataset.ignowAudioUserActivated === "1";
+          if (userControlled) {
+            if (video.muted && video.dataset.ignowMutedByIgnow !== "1") {
+              video.muted = false; // page re-muted what the user had unmuted
+            } else if (!video.muted && video.dataset.ignowMutedByIgnow === "1") {
+              video.muted = true; // page un-muted what the user had muted
+            }
+          }
+        }
+      } catch (error) {
+        console.warn("IG-Now could not keep the video audio as the user set it:", error);
+      }
+      // Mirror ALWAYS: this event fires for every source — our mute button,
+      // our slider, Instagram's native vertical slider, the page player —
+      // so the icon + track can never drift from the audible state. This is
+      // the "synchronize the volume control" core (v2.1.0).
+      syncVolume();
+    });
     video.addEventListener("play", () => {
       const isSearchCardHovered = host.matches(":hover") || video.matches(":hover");
       if (isSearchCardVideo(video) && !isSearchCardHovered) {
@@ -1421,6 +2136,7 @@
       sync();
     });
     video.addEventListener("pause", sync);
+    syncVolume();
     sync();
   }
 
@@ -1503,7 +2219,7 @@
       if (_ignowPlayingVideo && !_ignowMutedVideo) {
         _ignowMutedByHide = _ignowPlayingVideo.muted;
         _ignowMutedVideo = _ignowPlayingVideo;
-        _ignowMutedVideo.muted = true; // instant silence; the OS session mute is the guarantee
+        setVideoMuted(_ignowPlayingVideo, true); // instant silence; the OS session mute is the guarantee
       }
       videos.forEach(v => { if (!v.paused) v.pause(); });
       audios.forEach(a => { if (!a.paused) a.pause(); });
@@ -1520,7 +2236,7 @@
       // independent of any resume decision below. Restores the ORIGINAL mute
       // state (we forced it to true at hide; undo that even if it was false).
       if (_ignowMutedVideo && _ignowMutedVideo.isConnected) {
-        _ignowMutedVideo.muted = _ignowMutedByHide;
+        setVideoMuted(_ignowMutedVideo, _ignowMutedByHide);
       }
       _ignowMutedVideo = null;
       _ignowMutedByHide = false;
