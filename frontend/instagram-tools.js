@@ -2303,6 +2303,133 @@
     }
   });
 
+  // Hidden DM links: Instagram web drops `xma_web_url` actions from the UI,
+  // but they are in the GraphQL responses. Capture them, show under the DM.
+  const dmLinks = new Map();
+  let linksTimer = 0;
+  let floatSig = "";
+
+  function walkLinks(node, text, out) {
+    if (!node || typeof node !== "object") return;
+    const t = node.title_text || node.text; // IG puts the auto-DM text in xma.title_text
+    if (typeof t === "string" && t) text = t.trim();
+    if (node.cta_type === "xma_web_url" && node.action_url) {
+      out.push({ text, title: node.title || "Link", url: node.action_url });
+      return;
+    }
+    for (const k in node) walkLinks(node[k], text, out);
+  }
+
+  const linkStyle = document.createElement("style");
+  linkStyle.textContent = `
+    .ignow-dmlinks { display: flex; flex-direction: column; gap: 6px; width: max-content; min-width: 200px; max-width: 300px; margin: 6px 12px 2px; box-sizing: border-box; }
+    .ignow-dmlinks[hidden] { display: none; }
+    .ignow-dmlink { box-sizing: border-box; width: 100%; padding: 10px 16px; border: 1px solid rgba(128,128,128,.35); border-radius: 20px; background: rgba(128,128,128,.16); color: inherit; font: 600 14px/18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; text-align: center; cursor: pointer; transition: background .15s, opacity .15s; }
+    .ignow-dmlink:hover { background: rgba(128,128,128,.28); }
+    .ignow-dmlink:active { opacity: .7; }
+    .ignow-dmlink:focus-visible { outline: 2px solid #0095f6; outline-offset: 2px; }
+    .ignow-dmfloat { position: fixed; right: 16px; bottom: 16px; z-index: 2147483645; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; color: #f5f5f5; }
+    .ignow-dmfloat .ignow-dmlinks { width: 280px; max-height: 50vh; margin: 0; padding: 8px; overflow: auto; border-radius: 20px; background: #262626; box-shadow: 0 8px 28px rgba(0,0,0,.5); }
+    .ignow-dmfloat .ignow-dmlink { background: #363636; border-color: transparent; color: #f5f5f5; }
+    .ignow-dmfloat .ignow-dmlink:hover { background: #454545; }
+    .ignow-dmfloat > .ignow-dmlink { width: auto; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
+  `;
+  if (document.documentElement) document.documentElement.appendChild(linkStyle);
+
+  const dmFloat = document.createElement("div");
+  dmFloat.className = "ignow-dmfloat";
+  const dmToggle = document.createElement("button");
+  dmToggle.className = "ignow-dmlink";
+  const dmList = document.createElement("div");
+  dmList.className = "ignow-dmlinks";
+  dmList.hidden = true;
+  dmToggle.onclick = () => { dmList.hidden = !dmList.hidden; };
+  dmFloat.append(dmList, dmToggle);
+
+  function linkButton(l) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "ignow-dmlink";
+    b.textContent = "🔗 " + l.title;
+    try { b.title = new URL(new URL(l.url).searchParams.get("url") || l.url).hostname; } catch (e) {}
+    b.addEventListener("click", e => { e.stopPropagation(); openDefaultBrowser(l.url); });
+    return b;
+  }
+
+  function renderLinks() {
+    if (!dmLinks.size || !document.body) return;
+    const groups = new Map();
+    for (const l of dmLinks.values()) {
+      if (!groups.has(l.text)) groups.set(l.text, []);
+      groups.get(l.text).push(l);
+    }
+    const loose = [];
+    for (const [text, links] of groups) {
+      const els = text
+        ? [...document.querySelectorAll('[dir="auto"]')].filter(e => e.textContent.replace(/\s+/g, "") === text.replace(/\s+/g, ""))
+        : [];
+      if (!els.length) { loose.push(...links); continue; }
+      for (const el of els) {
+        const row = el.closest('[role="row"]') || el.parentElement;
+        if (row.querySelector(".ignow-dmlinks")) continue;
+        const box = document.createElement("div");
+        box.className = "ignow-dmlinks";
+        links.forEach(l => box.appendChild(linkButton(l)));
+        row.appendChild(box);
+      }
+    }
+    // Links whose message isn't on screen (other chats / no text match): floating list.
+    const sig = loose.map(l => l.url).join();
+    if (sig === floatSig) return;
+    floatSig = sig;
+    if (!loose.length) { dmFloat.remove(); return; }
+    dmToggle.textContent = "🔗 " + loose.length;
+    dmList.replaceChildren(...loose.map(linkButton));
+    document.body.appendChild(dmFloat);
+  }
+
+  function scheduleLinks() {
+    clearTimeout(linksTimer);
+    linksTimer = setTimeout(renderLinks, 300);
+  }
+
+  function captureLinks(t) {
+    const out = [];
+    for (const line of String(t).replace(/^for \(;;\);/, "").split("\n")) {
+      try { walkLinks(JSON.parse(line), "", out); } catch (e) {}
+    }
+    let added = false;
+    for (const l of out) {
+      const k = l.text + "\0" + l.url;
+      if (!dmLinks.has(k)) { dmLinks.set(k, l); added = true; }
+    }
+    if (added) scheduleLinks();
+  }
+  window.__ignowDmLinks = dmLinks; // debug: console → __ignowDmLinks.size
+
+  const fetchOrig = window.fetch;
+  window.fetch = function (...args) {
+    const p = fetchOrig.apply(this, args);
+    p.then(r => /graphql/i.test(r.url) && r.clone().text().then(captureLinks)).catch(() => {});
+    return p;
+  };
+
+  // Instagram loads DM threads via XHR, not fetch.
+  const xhrOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function (method, url) {
+    if (/graphql/i.test(String(url))) {
+      this.addEventListener("load", () => {
+        try { captureLinks(typeof this.response === "string" ? this.response : JSON.stringify(this.response)); } catch (e) {}
+      });
+    }
+    return xhrOpen.apply(this, arguments);
+  };
+
+  const startLinkObserver = () =>
+    new MutationObserver(scheduleLinks).observe(document.documentElement, { childList: true, subtree: true });
+  if (document.documentElement) startLinkObserver();
+  else document.addEventListener("DOMContentLoaded", startLinkObserver, { once: true });
+
   if (document.documentElement) observeVideoChanges();
   else document.addEventListener("DOMContentLoaded", observeVideoChanges, { once: true });
 })();
