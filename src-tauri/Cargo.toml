@@ -1,6 +1,6 @@
 [package]
 name = "ig-now"
-version = "2.1.0"
+version = "2.2.0"
 description = "IG-Now Desktop Client"
 authors = []
 edition = "2021"
@@ -20,6 +20,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["tray-icon", "devtools"] }
 tauri-plugin-shell = "2"
 tauri-plugin-autostart = "2"
+tauri-plugin-notification = "2"
 tokio = { version = "1", features = ["full"] }
 
 # Windows-only: Core Audio session mute/unmute for the process tree (audio.rs).

@@ -4,6 +4,21 @@ All notable changes to **IG-Now** are documented here. The format follows [Keep 
 
 ---
 
+## [2.2.0] — 2026-10-04
+
+### Added
+- Native desktop notifications when the Instagram unread-message count increases, including when IG-Now is hidden to the tray. Existing unread messages form the startup baseline; rapid updates are coalesced and an actively focused inbox does not produce redundant alerts.
+- Tools → Test message notification checks operating-system notification delivery.
+- Automated DM link buttons restored from Instagram's own responses, based on PR #2 by @yash-8923, with thread matching, safe HTTP(S) destinations, bounded memory and deduplication.
+
+### Fixed
+- Removed the duplicate outer scrollbar on Direct routes while preserving Instagram's inner conversation scrolling.
+- Prevented hidden DM links from appearing in unrelated chats or a global floating list.
+- Release publishing now requires all platform packages and two checksum manifests; asset failures stop publication.
+
+### Verification
+- Link parsing, DM DOM/route behavior, notification state, tray contracts, and media-overlay browser regression checks.
+
 ## [2.1.0] — 2026-09-19
 
 ### 🎨 Changed (UI/UX polish round)

@@ -10,13 +10,13 @@
 </p>
 
 <p align="center">
-  <strong>🎉 IG-NOW RELEASE: v2.1.0 IS NOW LIVE! 🎉</strong><br/>
-  <em>After meticulous development and deep refinement, the official v2.1.0 release is ready for production.</em>
+  <strong>🎉 IG-NOW RELEASE: v2.2.0 IS NOW LIVE! 🎉</strong><br/>
+  <em>Message notifications and restored DM links, with the media controls from v2.1.0.</em>
 </p>
 
 <p align="center">
-  <strong>✨ What's new in v2.1.0</strong><br/>
-  <em>Interactive seek bar everywhere · synchronized volume toggle & hover slider · dedicated skip (−5s/+5s) & reel navigation (⏮/⏭) · work-area centered 1180 × 1032 window · anti-flash launch · Universal macOS & Linux builds · dual SHA-256 manifests</em>
+  <strong>✨ What's new in v2.2.0</strong><br/>
+  <em>Native message notifications · restored automated DM link buttons · fixed duplicate DM scrollbar · tested media controls · cross-platform installers and SHA-256 manifests</em>
 </p>
 
 <p align="center">
@@ -25,7 +25,7 @@
   <img alt="Linux" src="https://img.shields.io/badge/platform-Linux%20(Universal)-FCC624?style=flat-square&logo=linux&logoColor=black">
   <img alt="Rust and Tauri 2" src="https://img.shields.io/badge/built%20with-Rust%20%2B%20Tauri%202-24C8DB?style=flat-square&logo=tauri&logoColor=white">
   <img alt="WebView2 and WebKit" src="https://img.shields.io/badge/rendering-WebView2%20%2F%20WebKit-0078D4?style=flat-square&logo=microsoftedge&logoColor=white">
-  <img alt="Version 2.1.0" src="https://img.shields.io/badge/version-2.1.0-e1306c?style=flat-square">
+  <img alt="Version 2.2.0" src="https://img.shields.io/badge/version-2.2.0-e1306c?style=flat-square">
   <a href="https://github.com/benedictusrey"><img src="https://img.shields.io/badge/author-%40benedictusrey-black?style=flat-square&logo=github"/></a>
 </p>
 
@@ -69,11 +69,11 @@ IG-Now lives inside your operating system like a first-class desktop citizen:
 
 ---
 
-## ⚔️ IG-Now v2.1.0 vs Instagram Web
+## ⚔️ IG-Now v2.2.0 vs Instagram Web
 
 Same official Instagram feed, account, and security — but with true desktop ergonomics:
 
-| Capability | 🟣 IG-Now v2.1.0 | 🌐 Instagram Web (Browser Tab) |
+| Capability | 🟣 IG-Now v2.2.0 | 🌐 Instagram Web (Browser Tab) |
 |---|---|---|
 | **System Tray & Window Presence** | Dedicated native window + tray menu with fast feed shortcuts | Lost among dozens of browser tabs |
 | **Close Button (`✕`)** | Closes to tray — app remains ready, all playback pauses instantly | Closes the tab and loses navigation context |
@@ -97,36 +97,36 @@ We provide pre-built, automated universal packages for **Windows, macOS, and Lin
 
 | Platform | Installer / Package | Target & Architecture |
 |---|---|---|
-| **Windows 10 / 11** | `IG-Now_2.1.0_x64-setup.exe` / `IG-Now_2.1.0_x64_en-US.msi` | 64-bit (Edge WebView2 Runtime) |
-| **macOS** | `IG-Now_2.1.0_universal.dmg` | Universal (Apple Silicon M1/M2/M3/M4 & Intel x86_64) |
-| **Linux (Universal)** | `IG-Now_2.1.0_amd64.AppImage` | Portable binary (runs on all major distros) |
-| **Linux (Debian/Ubuntu)** | `IG-Now_2.1.0_amd64.deb` | Ubuntu, Debian, Linux Mint, Pop!_OS |
-| **Linux (RPM)** | `IG-Now_2.1.0_x86_64.rpm` | Fedora, RHEL, openSUSE |
+| **Windows 10 / 11** | `IG-Now_2.2.0_x64-setup.exe` / `IG-Now_2.2.0_x64_en-US.msi` | 64-bit (Edge WebView2 Runtime) |
+| **macOS** | `IG-Now_2.2.0_universal.dmg` | Universal (Apple Silicon M1/M2/M3/M4 & Intel x86_64) |
+| **Linux (Universal)** | `IG-Now_2.2.0_amd64.AppImage` | Portable binary (runs on all major distros) |
+| **Linux (Debian/Ubuntu)** | `IG-Now_2.2.0_amd64.deb` | Ubuntu, Debian, Linux Mint, Pop!_OS |
+| **Linux (RPM)** | `IG-Now_2.2.0_x86_64.rpm` | Fedora, RHEL, openSUSE |
 
 All releases include SHA-256 manifests (`checksums.txt` and `SHA256SUMS.txt`) to verify the integrity of your download.
 
 ### Platform Instructions
 
 #### Windows
-1. Download and run `IG-Now_2.1.0_x64-setup.exe` (or the `.msi` package).
+1. Download and run `IG-Now_2.2.0_x64-setup.exe` (or the `.msi` package).
 2. The installer will automatically offer to download the [Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) if missing (preinstalled on Windows 11).
 3. Sign in securely through Instagram's official login page. Your session persists in the local machine profile.
 
 #### macOS
-1. Download `IG-Now_2.1.0_universal.dmg` and drag **IG-Now** to your `Applications` folder.
+1. Download `IG-Now_2.2.0_universal.dmg` and drag **IG-Now** to your `Applications` folder.
 2. On initial launch, right-click the app icon → select **Open** to approve the unsigned binary, then confirm under **System Settings → Privacy & Security**.
 3. Sign in and enjoy native desktop shortcuts and menu controls.
 
 #### Linux
 1. For AppImage: mark executable and launch:
    ```bash
-   chmod +x IG-Now_2.1.0_amd64.AppImage
-   ./IG-Now_2.1.0_amd64.AppImage
+   chmod +x IG-Now_2.2.0_amd64.AppImage
+   ./IG-Now_2.2.0_amd64.AppImage
    ```
 2. For Debian/Ubuntu (`.deb`) or Fedora (`.rpm`), install via your package manager:
    ```bash
-   sudo apt install ./IG-Now_2.1.0_amd64.deb     # Debian / Ubuntu
-   sudo dnf install ./IG-Now_2.1.0_x86_64.rpm   # Fedora / RHEL
+   sudo apt install ./IG-Now_2.2.0_amd64.deb     # Debian / Ubuntu
+   sudo dnf install ./IG-Now_2.2.0_x86_64.rpm   # Fedora / RHEL
    ```
    *(Ensure `libwebkit2gtk-4.1` is installed on your distribution).*
 

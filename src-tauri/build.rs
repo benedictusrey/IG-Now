@@ -11,6 +11,8 @@ fn main() {
             "prepare_download_folder",
             "download_media",
             "save_media_bytes",
+            "report_dm_unread",
+            "test_message_notification",
         ]),
     ))
     .expect("failed to run tauri-build");

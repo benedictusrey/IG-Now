@@ -1,0 +1,13 @@
+{
+  "name": "ig-now-verification",
+  "version": "2.2.0",
+  "private": true,
+  "scripts": {
+    "tauri": "tauri",
+    "test": "node --test frontend/links.test.js frontend/direct-messages.test.cjs"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.1",
+    "jsdom": "26.1.0"
+  }
+}

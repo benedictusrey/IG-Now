@@ -15,6 +15,7 @@
     "allow-download-media",
     "allow-save-media-bytes",
     "allow-open-external-url",
-    "allow-prepare-download-folder"
+    "allow-prepare-download-folder",
+    "allow-report-dm-unread"
   ]
 }

@@ -28,12 +28,13 @@ releases/
 
 | Version | Date | Status | Highlights |
 | --- | --- | --- | --- |
-| **v2.1.0** | 2026-09-21 | Current — local build (tag pending) | Seek bar works on every video, in-overlay volume toggle, 1180 × 1032 work-area window, universal cross-platform CI |
+| [v2.2.0](https://github.com/benedictusrey/IG-Now/releases/tag/v2.2.0) | 2026-10-04 | Current | Message notifications, hidden DM links, and DM scrollbar fix |
+| [v2.1.0](https://github.com/benedictusrey/IG-Now/releases/tag/v2.1.0) | 2026-09-21 | Published | Seek bar works on every video, in-overlay volume toggle, 1180 × 1032 work-area window, universal cross-platform CI |
 | [v2.0.0](https://github.com/benedictusrey/IG-Now/releases/tag/v2.0.0) | 2026-08-07 | Published | The Desktop-First Milestone — tray, pause-on-minimize, media saving |
 | [v1.0.0](https://github.com/benedictusrey/IG-Now/releases/tag/v1.0.0) | 2026-08-05 | Published | Initial public release |
 
 See [`versions.json`](versions.json) for the same data in structured form, and
-[`../RELEASE_NOTES.md`](../RELEASE_NOTES.md) for the full v2.1.0 story.
+[`../RELEASE_NOTES.md`](../RELEASE_NOTES.md) for v2.2.0 details.
 
 ## 🧾 Adding a new version
 

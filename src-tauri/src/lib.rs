@@ -6,6 +6,7 @@
 mod about_logo;
 #[cfg(windows)]
 mod audio;
+mod notifications;
 mod tray;
 
 use std::{
@@ -22,6 +23,7 @@ use tauri_plugin_shell::ShellExt;
 
 const INSTAGRAM_WINDOW_LABEL: &str = "instagram";
 const INSTAGRAM_HELPER_SCRIPT: &str = include_str!("../../frontend/instagram-tools.js");
+const DIRECT_MESSAGES_SCRIPT: &str = include_str!("../../frontend/direct-messages.js");
 
 /// Default window geometry (logical px): 1180 x 1032, launched centered in the
 /// monitor's work area (screen minus the top system bar and the bottom
@@ -306,6 +308,7 @@ pub fn launch_instagram_internal(app: &AppHandle, start_minimized: bool) -> Resu
     .background_color(Color(18, 18, 18, 255))
     .visible(false)
     .data_directory(profile_data_dir)
+    .initialization_script(DIRECT_MESSAGES_SCRIPT)
     .initialization_script(INSTAGRAM_HELPER_SCRIPT)
     .on_page_load(move |window, payload| {
         if payload.event() == tauri::webview::PageLoadEvent::Finished && !start_minimized {
@@ -512,6 +515,8 @@ async fn save_media_bytes(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
+        .manage(notifications::MessageNotifications::default())
         .plugin(tauri_plugin_shell::init())
         // Launch-on-startup support; the app reads the `--minimized` argument
         // itself and starts hidden to the tray (autostart never pops a window).
@@ -520,6 +525,8 @@ pub fn run() {
             Some(vec!["--minimized"]),
         ))
         .invoke_handler(tauri::generate_handler![
+            notifications::report_dm_unread,
+            notifications::test_message_notification,
             open_external_url,
             prepare_download_folder,
             download_media,

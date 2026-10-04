@@ -94,6 +94,7 @@ const MENU_LAYOUT: &[MenuRow] = &[
             MenuRow::Item("copy_url", "Copy page URL"),
             MenuRow::Item("open_browser", "Open page in browser"),
             MenuRow::Item("cobalt_guide", "Cobalt video downloader"),
+            MenuRow::Item("test_notification", "Test message notification"),
             MenuRow::Separator,
             MenuRow::Item("autostart", "🚀 Launch on Startup"),
         ],
@@ -156,6 +157,7 @@ const HANDLED_MENU_IDS: &[&str] = &[
     "copy_url",
     "open_browser",
     "cobalt_guide",
+    "test_notification",
     "autostart",
     "about",
     "quit",
@@ -677,6 +679,11 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn Error>> {
             "cobalt_guide" => {
                 if let Err(error) = app.shell().open("https://cobalt.tools/", None) {
                     eprintln!("[IG-Now] Failed to open the Cobalt setup guide: {error}");
+                }
+            }
+            "test_notification" => {
+                if let Err(error) = crate::notifications::test_message_notification(app.clone()) {
+                    eprintln!("[IG-Now] Notification test failed: {error}");
                 }
             }
             "autostart" => {

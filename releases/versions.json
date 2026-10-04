@@ -1,14 +1,31 @@
 {
   "product": "IG-Now",
   "repository": "https://github.com/benedictusrey/IG-Now",
-  "latest": "2.1.0",
+  "latest": "2.2.0",
   "versions": [
+    {
+      "version": "2.2.0",
+      "tag": "v2.2.0",
+      "date": "2026-10-04",
+      "status": "current",
+      "releaseUrl": "https://github.com/benedictusrey/IG-Now/releases/tag/v2.2.0",
+      "highlights": [
+        "Native message notifications",
+        "Restored automated DM links (PR #2)",
+        "Duplicate outer DM scrollbar fixed"
+      ],
+      "documents": {
+        "releaseNotes": "RELEASE_NOTES.md",
+        "changelog": "CHANGELOG.md"
+      },
+      "localBinaries": "releases/versions/v2.2.0/binaries/"
+    },
     {
       "version": "2.1.0",
       "tag": "v2.1.0",
       "date": "2026-09-19",
-      "status": "current",
-      "notes": "Tag pending: built locally, awaiting commit + push of the v2.1.0 tag",
+      "status": "published",
+      "notes": "Published v2.1.0",
       "highlights": [
         "Redesigned About overlay: gradient banner, version pill, feature grid, GitHub links, Esc/backdrop dismissal",
         "Tray menu polish: Open downloads folder shortcut, terser labels, autostart visually separated",
@@ -28,7 +45,8 @@
         "releaseNotes": "RELEASE_NOTES.md",
         "changelog": "CHANGELOG.md"
       },
-      "localBinaries": "releases/versions/v2.1.0/binaries/"
+      "localBinaries": "releases/versions/v2.1.0/binaries/",
+      "releaseUrl": "https://github.com/benedictusrey/IG-Now/releases/tag/v2.1.0"
     },
     {
       "version": "2.0.0",

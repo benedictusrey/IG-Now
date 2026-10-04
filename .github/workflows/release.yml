@@ -2,16 +2,14 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g. v2.1.0)'
+        description: 'Release tag (e.g. v2.2.0)'
         required: true
-        default: 'v2.1.0'
+        default: 'v2.2.0'
 
-# One release build at a time per tag: re-running never races itself.
 concurrency:
   group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
@@ -24,173 +22,87 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # ── Windows (x64) ─────────────────────────────────────────────────
           - platform: windows-latest
             args: ''
             name: Windows (x64)
-            rust_targets: 'x86_64-pc-windows-msvc'
-
-          # ── macOS (Universal: Apple Silicon + Intel) ──────────────────────
-          # Using macos-latest (Apple Silicon) to build a universal binary
-          # targeting both aarch64-apple-darwin and x86_64-apple-darwin.
-          # This creates a single universal DMG compatible with both M-series
-          # and Intel Macs, saving runner time while maximizing compatibility.
+            rust_targets: x86_64-pc-windows-msvc
           - platform: macos-latest
             args: '--target universal-apple-darwin'
             name: macOS (Universal)
             rust_targets: 'aarch64-apple-darwin x86_64-apple-darwin'
-
-          # ── Linux (Universal AppImage, deb, rpm) ──────────────────────────
           - platform: ubuntu-22.04
             args: ''
             name: Linux (x64)
-            rust_targets: 'x86_64-unknown-linux-gnu'
-
+            rust_targets: x86_64-unknown-linux-gnu
     runs-on: ${{ matrix.platform }}
     name: Build · ${{ matrix.name }}
-
     steps:
-      # ── Checkout ────────────────────────────────────────────────────────────
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      # ── Linux system dependencies ───────────────────────────────────────────
-      # Installs webkit, appindicator, patchelf, and rpm so all bundle targets
-      # (AppImage, deb, and rpm) can build smoothly without packaging errors.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
       - name: Install Linux dependencies
         if: startsWith(matrix.platform, 'ubuntu-')
         run: |
-          sudo apt-get update || true
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            rpm
-
-      # ── Rust toolchain ──────────────────────────────────────────────────────
-      - name: Setup Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf rpm
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.rust_targets }}
-
-      # ── Rust cache ──────────────────────────────────────────────────────────
-      - name: Cache Rust build artefacts
-        uses: swatinem/rust-cache@v2
+      - uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
           key: ${{ matrix.platform }}-${{ matrix.name }}
-
-      # ── Node.js ─────────────────────────────────────────────────────────────
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 20
-
-      # ── Homebrew sbin on PATH (macOS) ───────────────────────────────────────
-      - name: Put Homebrew sbin on PATH (macOS)
+          node-version: 22
+      - name: Verify source
+        run: |
+          npm ci
+          npm test
+          node --check frontend/instagram-tools.js
+          node --check frontend/direct-messages.js
+          cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+          cargo test --manifest-path src-tauri/Cargo.toml --locked --lib
+      - name: Put Homebrew sbin on PATH
         if: startsWith(matrix.platform, 'macos-')
         run: echo "$(brew --prefix)/sbin" >> "$GITHUB_PATH"
-
-      # ── Build & publish ─────────────────────────────────────────────────────
-      - name: Build and release with Tauri
+      - name: Build release packages
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ inputs.tag || github.ref_name }}
           releaseName: 'IG-Now ${{ inputs.tag || github.ref_name }}'
-          releaseBody: |
-            ## 🟣 IG-Now — ${{ inputs.tag || github.ref_name }}
-
-            Instagram, elevated. A high-performance, lightweight **Rust + Tauri v2** desktop client — same official Instagram, with native OS superpowers. ~7 MB binary, no Electron bloat.
-
-            ### ✨ What's New in v2.1.0
-
-            - 🎚️ **Interactive Seek Bar Everywhere** — the white seek line is draggable and clickable on **every** video (Reels, home feed, Search cards), captured at window-level ahead of page interceptors.
-            - 🔊 **Volume Control & Hover Slider** — in-bar volume button with a hover-expand level slider synchronized bidirectional with Instagram's player and guarded against auto-remuting.
-            - ⏩ **Dedicated Skip & Reel Navigation Buttons** — `-5s` / `+5s` seek skip buttons and `⏮` / `⏭` Reel navigation buttons directly in the control bar.
-            - 🪟 **Refined Window Geometry** — default 1180 × 1032, clamped to the monitor work area and centered between system taskbars, with anti-flash dark launch styling.
-            - 🧭 **Universal Cross-Platform Builds** — Windows (x64), macOS (Universal DMG for Apple Silicon + Intel), and Linux (Universal AppImage, Debian `.deb`, Fedora/RHEL `.rpm`).
-            - 🔐 **Dual Checksum Manifests** — SHA-256 `checksums.txt` and `SHA256SUMS.txt` covering every platform asset.
-
-            ### 📦 Downloads
-
-            | Platform | File | Notes |
-            |---|---|---|
-            | Windows 10 / 11 | `IG-Now_*_x64-setup.exe` or `IG-Now_*_x64_en-US.msi` | x64 (WebView2 Runtime) |
-            | macOS (Universal) | `IG-Now_*_universal.dmg` | Native on Apple Silicon (M1/M2/M3/M4) & Intel |
-            | Linux (AppImage) | `IG-Now_*_amd64.AppImage` | Universal portable binary |
-            | Linux (Debian/Ubuntu) | `IG-Now_*_amd64.deb` | Debian, Ubuntu, Mint, Pop!_OS |
-            | Linux (RPM) | `IG-Now_*_x86_64.rpm` | Fedora, RHEL, openSUSE |
-
-            Every release ships `checksums.txt` and `SHA256SUMS.txt` with SHA-256 hashes of all assets — verify your download before installing.
-
-            ### 🚀 Getting Started
-
-            > **Windows:** Run the installer — it will automatically offer to fetch the [Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) if missing (preinstalled on Windows 11).
-            >
-            > **macOS:** On first launch, right-click the app → **Open** to approve the unsigned build, then confirm in System Settings → Privacy & Security.
-            >
-            > **Linux:** The AppImage is self-contained — run `chmod +x IG-Now_*_amd64.AppImage && ./IG-Now_*_amd64.AppImage`. For `.deb`/`.rpm`, ensure `libwebkit2gtk-4.1` is installed.
-
-            ### 🌟 Key Highlights
-
-            - 🖥️ Native window + system tray with instant feed shortcuts (Home, Explore, Reels, DMs, Notifications, Profile)
-            - 🔇 Guaranteed silence on minimize / close-to-tray with instant video pause and audio session muting
-            - 💾 Right-click images to save into `Downloads/IG-Now`; right-click videos for one-click Cobalt hand-off
-            - ⌨️ Keyboard power controls: `←`/`→` seek, `↑`/`↓` between Reels, `Esc` to exit, Ctrl+click image zoom (10%–400%)
-            - 📌 Always-on-top mode · Zoom controls · In-page About overlay with zero network footprint
-            - 🔒 Pure local session privacy — zero telemetry, zero analytics, zero remote database
-
-            ---
-            *Conceived, authored, and maintained with ❤️ by [Benedictus Reynaldo Hartanto (@benedictusrey)](https://github.com/benedictusrey)*
+          releaseBody: 'Desktop message notifications, a single outer DM scroll surface, and restored automated-message link buttons. See RELEASE_NOTES.md for usage and verification details.'
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
 
-  # ── SHA-256 checksums ──────────────────────────────────────────────────────
-  # Runs once on Linux after ALL platform builds so the file covers every
-  # asset; sha256sum is native here (no PowerShell/SHA256CERT quirks).
-  checksums:
+  publish:
     permissions:
       contents: write
     needs: build
     runs-on: ubuntu-22.04
     steps:
-      - name: Generate and upload SHA-256 checksums
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+      - name: Verify assets, upload checksum manifests, and publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          set -e
-          mkdir -p release-assets
-          echo "Locating release assets for tag $TAG..."
-
-          # Download all assets for the release
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir release-assets --clobber || true
-
-          # If download by tag was empty, attempt lookup via release ID (covers draft releases)
-          RELEASE_ID=""
-          if [ -z "$(ls -A release-assets 2>/dev/null)" ]; then
-            RELEASE_ID=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name==\"$TAG\") | .id" | head -n 1)
-            if [ -n "$RELEASE_ID" ]; then
-              echo "Fetching assets using release ID $RELEASE_ID..."
-              gh release download "$RELEASE_ID" --repo "$GITHUB_REPOSITORY" --dir release-assets --clobber || true
-            fi
-          fi
-
+          set -euo pipefail
+          mkdir release-assets
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir release-assets
           cd release-assets
           rm -f checksums.txt SHA256SUMS.txt
-
-          # Ensure assets exist before running sha256sum
-          if ls * 1> /dev/null 2>&1; then
-            sha256sum * > ../checksums.txt
-            cp ../checksums.txt ../SHA256SUMS.txt
-            cd ..
-            echo "Uploading checksum manifests..."
-            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber checksums.txt SHA256SUMS.txt || \
-            [ -n "$RELEASE_ID" ] && gh release upload "$RELEASE_ID" --repo "$GITHUB_REPOSITORY" --clobber checksums.txt SHA256SUMS.txt
-          else
-            echo "No binary assets found in release-assets directory."
-          fi
+          # Publication must fail if any supported platform package is missing.
+          for suffix in '*_x64-setup.exe' '*_x64_en-US.msi' '*_universal.dmg' '*_amd64.AppImage' '*_amd64.deb' '*.rpm' '*.app.tar.gz'; do
+            compgen -G "$suffix" > /dev/null || { echo "Missing package: $suffix"; exit 1; }
+          done
+          find . -maxdepth 1 -type f -printf '%f\0' | sort -z | xargs -0 sha256sum > ../checksums.txt
+          cd ..
+          cp checksums.txt SHA256SUMS.txt
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" checksums.txt SHA256SUMS.txt --clobber
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file RELEASE_NOTES.md --draft=false --latest
