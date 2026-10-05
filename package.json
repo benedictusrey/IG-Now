@@ -4,10 +4,12 @@
   "private": true,
   "scripts": {
     "tauri": "tauri",
-    "test": "node --test frontend/links.test.js frontend/direct-messages.test.cjs"
+    "test": "node --test frontend/links.test.js frontend/direct-messages.test.cjs",
+    "test:layout": "node --test frontend/layout.test.cjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.12.1",
-    "jsdom": "26.1.0"
+    "jsdom": "26.1.0",
+    "playwright": "1.56.0"
   }
 }

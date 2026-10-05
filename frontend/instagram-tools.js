@@ -148,8 +148,11 @@
       background: rgba(255, 255, 255, 0.12);
     }
 
-    .ignow-video-host {
-      position: relative !important;
+    /* Only unpositioned hosts need an overlay anchor. Keep the fallback's
+       specificity at zero so later Instagram layout rules always win. Never
+       flatten native absolute/fixed/sticky positioning (see issue #3). */
+    :where(.ignow-video-host--static) {
+      position: relative;
     }
 
     .ignow-video-controls {
@@ -1738,6 +1741,9 @@
 
     video.dataset.ignowNativeControls = "1";
     video.controls = false;
+    if (getComputedStyle(host).position === "static") {
+      host.classList.add("ignow-video-host--static");
+    }
     host.classList.add("ignow-video-host");
 
     const controls = document.createElement("div");
