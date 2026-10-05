@@ -1,0 +1,22 @@
+name: Layout regression
+on:
+  pull_request:
+    paths: ['frontend/**', 'package*.json', '.github/workflows/layout-regression.yml']
+  push:
+    branches: [main, 'fix/**']
+    paths: ['frontend/**', 'package*.json', '.github/workflows/layout-regression.yml']
+permissions:
+  contents: read
+jobs:
+  layout:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:layout
