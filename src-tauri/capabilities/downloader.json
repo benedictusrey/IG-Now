@@ -1,0 +1,20 @@
+{
+  "$schema": "https://schema.tauri.app/config/2/capability",
+  "identifier": "downloader-local",
+  "description": "Permissions for the local IG-Now Downloader window",
+  "windows": [
+    "downloader"
+  ],
+  "local": true,
+  "permissions": [
+    "core:default",
+    "allow-open-downloader-window",
+    "allow-take-pending-downloader-context",
+    "allow-inspect-instagram-post",
+    "allow-download-post-selection",
+    "allow-save-caption-file",
+    "allow-open-downloads-folder",
+    "allow-open-external-url",
+    "allow-prepare-download-folder"
+  ]
+}

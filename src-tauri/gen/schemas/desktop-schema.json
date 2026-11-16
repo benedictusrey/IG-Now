@@ -393,6 +393,30 @@
           "markdownDescription": "Enables the download_media command without any pre-configured scope."
         },
         {
+          "description": "Enables the download_post_selection command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-download-post-selection",
+          "markdownDescription": "Enables the download_post_selection command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the inspect_instagram_post command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-inspect-instagram-post",
+          "markdownDescription": "Enables the inspect_instagram_post command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the open_downloader_window command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-open-downloader-window",
+          "markdownDescription": "Enables the open_downloader_window command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the open_downloads_folder command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-open-downloads-folder",
+          "markdownDescription": "Enables the open_downloads_folder command without any pre-configured scope."
+        },
+        {
           "description": "Enables the open_external_url command without any pre-configured scope.",
           "type": "string",
           "const": "allow-open-external-url",
@@ -411,10 +435,28 @@
           "markdownDescription": "Enables the report_dm_unread command without any pre-configured scope."
         },
         {
+          "description": "Enables the save_caption_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-save-caption-file",
+          "markdownDescription": "Enables the save_caption_file command without any pre-configured scope."
+        },
+        {
           "description": "Enables the save_media_bytes command without any pre-configured scope.",
           "type": "string",
           "const": "allow-save-media-bytes",
           "markdownDescription": "Enables the save_media_bytes command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the submit_downloader_probe command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-submit-downloader-probe",
+          "markdownDescription": "Enables the submit_downloader_probe command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the take_pending_downloader_context command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-take-pending-downloader-context",
+          "markdownDescription": "Enables the take_pending_downloader_context command without any pre-configured scope."
         },
         {
           "description": "Enables the test_message_notification command without any pre-configured scope.",
@@ -427,6 +469,30 @@
           "type": "string",
           "const": "deny-download-media",
           "markdownDescription": "Denies the download_media command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the download_post_selection command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-download-post-selection",
+          "markdownDescription": "Denies the download_post_selection command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the inspect_instagram_post command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-inspect-instagram-post",
+          "markdownDescription": "Denies the inspect_instagram_post command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_downloader_window command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-open-downloader-window",
+          "markdownDescription": "Denies the open_downloader_window command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_downloads_folder command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-open-downloads-folder",
+          "markdownDescription": "Denies the open_downloads_folder command without any pre-configured scope."
         },
         {
           "description": "Denies the open_external_url command without any pre-configured scope.",
@@ -447,10 +513,28 @@
           "markdownDescription": "Denies the report_dm_unread command without any pre-configured scope."
         },
         {
+          "description": "Denies the save_caption_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-save-caption-file",
+          "markdownDescription": "Denies the save_caption_file command without any pre-configured scope."
+        },
+        {
           "description": "Denies the save_media_bytes command without any pre-configured scope.",
           "type": "string",
           "const": "deny-save-media-bytes",
           "markdownDescription": "Denies the save_media_bytes command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the submit_downloader_probe command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-submit-downloader-probe",
+          "markdownDescription": "Denies the submit_downloader_probe command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the take_pending_downloader_context command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-take-pending-downloader-context",
+          "markdownDescription": "Denies the take_pending_downloader_context command without any pre-configured scope."
         },
         {
           "description": "Denies the test_message_notification command without any pre-configured scope.",

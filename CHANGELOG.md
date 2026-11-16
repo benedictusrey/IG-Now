@@ -4,6 +4,19 @@ All notable changes to **IG-Now** are documented here. The format follows [Keep 
 
 ---
 
+## [2.5.0] — 2026-11-17
+
+### Added
+- Standalone native **IG-Now Downloader** window (`765 × 885` centered to IG-Now's active monitor work area, locked outer viewport with scrollable caption panel) launched via sidebar **Downloader**, the video bar download icon, corner image download buttons (`.ignow-image-download-btn`), or the 5-action right-click menu, with automatic link/clipboard inspection and initial slide selection.
+- Full support for **up-to-20 mixed photo + video carousels**, **image-only posts**, and **collaboration posts** (`/{user}/p/{code}/`, `coauthor_producers` fallback): GraphQL + `?__a=1&__d=dis` + React Fiber resolution, **Audio Only (`.m4a`)** FFmpeg extraction, **H.264 + AAC `.mp4`** muxing, MIME/header-validated full-res images, 6-worker concurrent bundle downloads with live progress, zero-padded `-slide-01`..`-slide-20` filenames, and `caption.txt` + `metadata.json` output in `Downloads/IG-Now`.
+- Windows Core Audio grouped session registration (`audio::register_app_sessions` + `ensure_foreground_audio_ready`) that registers `"IG-Now"` in Windows Settings Volume mixer across active render endpoints and keeps audio unmuted whenever IG-Now is in the foreground.
+- Sidebar **Downloader**, **Forward**, and **Back** controls directly above `More` (adapting to expanded, collapsed, light, and dark sidebar surfaces with duplicate-URL `popstate` tracking), paired with `Esc` returning to the pre-click view (`Close` or `history.back()`) and `Alt + Left` / `Alt + Right`.
+
+### Changed
+- Set default main desktop window resolution to `1588 × 1025` logical px and Downloader window resolution to `765 × 885` logical px (`fit_window_to_work_area_on_monitor`), clamped and centered within the active monitor work area.
+- Removed custom DOM comment docking/stage transforms and Cobalt redirect in favor of Instagram's original native Comments panel and built-in native Rust downloader.
+- Hardened React Fiber inspection against cross-origin `WindowProxy` `SecurityError` (`isSafeDataObject`), synchronized `.ignow-video-controls__volume` and Instagram's native corner mute button bidirectionally with auto-unmute in the foreground, and redesigned the About sheet with crisp inline SVGs.
+
 ## [2.2.0] — 2026-10-04
 
 ### Added

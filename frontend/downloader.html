@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IG-Now Downloader</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0c0f;
+      --surface: #111318;
+      --surface-elevated: #151820;
+      --well: #1a1d26;
+      --well-hover: #232734;
+      --border: rgba(255, 255, 255, 0.09);
+      --border-strong: rgba(255, 255, 255, 0.17);
+      --ink: #f4f5f7;
+      --muted: #a6adbb;
+      --dim: #8c93a3;
+      --accent: #f4f5f7;
+      --accent-ink: #0b0c0f;
+      --focus: #4a90ff;
+      --ok: #86efac;
+      --warn: #fde047;
+      --err: #fca5a5;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    *::selection {
+      background: rgba(74, 144, 255, 0.30);
+      color: #f8fafc;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--ink);
+      font: 13px/1.5 "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+      overflow: hidden;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+    }
+
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.22);
+      border-radius: 999px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.34);
+    }
+
+    .workbench-app {
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background: var(--surface);
+      overflow: hidden;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 11px 22px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+      flex-shrink: 0;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-width: 0;
+    }
+
+    .brand-mark {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: var(--well);
+      border: 1px solid var(--border-strong);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      color: var(--ink);
+    }
+
+    .brand-title {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.015em;
+      line-height: 1.2;
+    }
+
+    .subtitle {
+      margin: 2px 0 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: nowrap;
+      flex-shrink: 0;
+      justify-content: flex-end;
+    }
+
+    .engine-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .engine-status::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--dim);
+      flex-shrink: 0;
+    }
+
+    .engine-status[data-ready="ffmpeg"]::before {
+      background: var(--ok);
+    }
+
+    .engine-status[data-ready="progressive"]::before {
+      background: var(--warn);
+    }
+
+    .url-strip {
+      padding: 11px 22px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface-elevated);
+      flex-shrink: 0;
+    }
+
+    .label-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 6px 10px;
+      margin-bottom: 6px;
+    }
+
+    label.field-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      margin: 0 0 6px;
+    }
+
+    .label-row label.field-label {
+      margin-bottom: 0;
+    }
+
+    .field-hint {
+      font-size: 12px;
+      color: var(--dim);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .input-wrap {
+      position: relative;
+      flex: 1 1 auto;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+    }
+
+    .input-wrap input[type="text"] {
+      padding-right: 34px;
+    }
+
+    .clear-input-btn {
+      position: absolute;
+      right: 6px;
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+    }
+
+    .clear-input-btn:hover:not(:disabled) {
+      background: var(--well-hover);
+      color: var(--ink);
+    }
+
+    .clear-input-btn[hidden] {
+      display: none;
+    }
+
+    input[type="text"],
+    select,
+    textarea {
+      width: 100%;
+      border: 1px solid var(--border-strong);
+      border-radius: 8px;
+      background: var(--well);
+      color: var(--ink);
+      padding: 8px 11px;
+      font: inherit;
+      transition: border-color 120ms ease, background 120ms ease;
+    }
+
+    input[type="text"]::placeholder,
+    textarea::placeholder {
+      color: var(--dim);
+    }
+
+    input[type="text"]:hover:not(:disabled),
+    select:hover:not(:disabled),
+    textarea:hover:not(:disabled) {
+      border-color: rgba(255, 255, 255, 0.28);
+    }
+
+    select {
+      appearance: none;
+      padding-right: 30px;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a6adbb' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      cursor: pointer;
+    }
+
+    select:disabled,
+    input:disabled,
+    textarea:disabled {
+      cursor: not-allowed;
+      opacity: 0.54;
+    }
+
+    input[type="text"]:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible,
+    button:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 1px;
+    }
+
+    textarea {
+      flex: 1 1 0;
+      min-height: 110px;
+      height: 100%;
+      resize: none;
+      overflow-y: auto;
+      line-height: 1.55;
+    }
+
+    button {
+      height: 36px;
+      padding: 0 13px;
+      border: 1px solid var(--border-strong);
+      border-radius: 8px;
+      background: var(--well);
+      color: var(--ink);
+      font: 500 12.5px/1 "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: background 120ms ease, border-color 120ms ease, transform 80ms ease;
+    }
+
+    button svg {
+      width: 15px;
+      height: 15px;
+      flex-shrink: 0;
+    }
+
+    button:hover:not(:disabled) {
+      background: var(--well-hover);
+      border-color: rgba(255, 255, 255, 0.28);
+    }
+
+    button:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+
+    button:disabled {
+      opacity: 0.44;
+      cursor: not-allowed;
+    }
+
+    button.primary {
+      background: var(--accent);
+      color: var(--accent-ink);
+      border-color: var(--accent);
+      font-weight: 600;
+    }
+
+    button.primary:hover:not(:disabled) {
+      background: #e4e7ec;
+      border-color: #e4e7ec;
+    }
+
+    button.compact-btn {
+      height: 30px;
+      padding: 0 10px;
+      font-size: 12px;
+    }
+
+    .workbench-body {
+      flex: 1 1 0;
+      min-height: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      padding: 13px 22px;
+      gap: 11px;
+    }
+
+    .meta-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding-bottom: 9px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    #post-summary {
+      color: var(--ink);
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .split-grid {
+      display: grid;
+      grid-template-columns: 296px minmax(0, 1fr);
+      gap: 18px;
+      align-items: stretch;
+      flex: 1 1 0;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .media-col {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 0;
+      overflow-y: auto;
+    }
+
+    .caption-col {
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .preview-box {
+      position: relative;
+      flex: 1 1 228px;
+      min-height: 188px;
+      max-height: 310px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #08090c;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .preview-box[data-state="loading"] {
+      border-color: rgba(74, 144, 255, 0.35);
+      background: #0c0f16;
+    }
+
+    .preview-box[data-state="loading"] .preview-empty {
+      animation: preview-pulse 1.4s ease-in-out infinite;
+    }
+
+    @keyframes preview-pulse {
+      0%, 100% {
+        opacity: 0.55;
+      }
+      50% {
+        opacity: 1;
+      }
+    }
+
+    .preview-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 36px 18px 18px;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      max-width: 24ch;
+    }
+
+    .preview-empty[hidden] {
+      display: none;
+    }
+
+    .preview-empty svg {
+      width: 26px;
+      height: 26px;
+      color: var(--dim);
+    }
+
+    #preview-thumb {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+      background: #08090c;
+    }
+
+    .preview-tag {
+      position: absolute;
+      left: 10px;
+      top: 10px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(11, 12, 15, 0.88);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      pointer-events: none;
+    }
+
+    .preview-tag[hidden] {
+      display: none;
+    }
+
+    .slide-picker-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .slide-step-btn {
+      width: 34px;
+      padding: 0;
+    }
+
+    .slide-strip {
+      display: flex;
+      justify-content: safe center;
+      gap: 6px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding: 2px 0 4px;
+      max-width: 100%;
+    }
+
+    .slide-strip[hidden] {
+      display: none;
+    }
+
+    .slide-strip__btn {
+      position: relative;
+      flex: 0 0 auto;
+      width: 44px;
+      height: 44px;
+      min-height: 44px;
+      padding: 0;
+      border-radius: 7px;
+      overflow: hidden;
+      background: #08090c;
+      border: 1px solid var(--border-strong);
+    }
+
+    .slide-strip__btn[aria-pressed="true"] {
+      border-color: var(--ink);
+      box-shadow: 0 0 0 1px var(--ink);
+    }
+
+    .slide-strip__thumb {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .slide-strip__num {
+      position: absolute;
+      left: 3px;
+      top: 3px;
+      padding: 0 4px;
+      border-radius: 4px;
+      background: rgba(11, 12, 15, 0.85);
+      color: var(--ink);
+      font-size: 10px;
+      font-weight: 600;
+      line-height: 1.4;
+      font-variant-numeric: tabular-nums;
+      pointer-events: none;
+    }
+
+    .slide-strip__video {
+      position: absolute;
+      right: 3px;
+      bottom: 3px;
+      width: 14px;
+      height: 14px;
+      border-radius: 4px;
+      background: rgba(11, 12, 15, 0.88);
+      color: var(--ink);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+
+    .spec-box {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg);
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .spec-line {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .spec-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .spec-copy-btn {
+      height: 24px;
+      padding: 0 8px;
+      font-size: 12px;
+      border-radius: 5px;
+      color: var(--muted);
+      border-color: var(--border);
+    }
+
+    .spec-value {
+      color: var(--ink);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .caption-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .caption-title-group {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .actions-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      padding-top: 2px;
+    }
+
+    .actions-grid button {
+      width: 100%;
+      min-width: 0;
+      height: 38px;
+      padding: 0 12px;
+      font-size: 12.5px;
+    }
+
+    .actions-grid button[hidden] {
+      display: none;
+    }
+
+    #download-selected-btn {
+      grid-column: 1 / -1;
+    }
+
+    .actions-grid[data-image-only="1"] #download-bundle-btn {
+      grid-column: 1 / -1;
+    }
+
+    .actions-note {
+      margin: 0;
+      font-size: 12px;
+      color: var(--dim);
+      line-height: 1.45;
+    }
+
+    .status-footer {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 22px;
+      border-top: 1px solid var(--border);
+      background: var(--bg);
+    }
+
+    .status-footer[data-busy="1"]::before {
+      content: "";
+      position: absolute;
+      top: -1px;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent 0%, var(--focus) 50%, transparent 100%);
+      animation: status-bar-pulse 1.2s ease-in-out infinite;
+    }
+
+    @keyframes status-bar-pulse {
+      0% { opacity: 0.35; }
+      50% { opacity: 1; }
+      100% { opacity: 0.35; }
+    }
+
+    .status-box {
+      flex: 1 1 auto;
+      min-width: 0;
+      color: var(--muted);
+      font-size: 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .status-box[data-tone="ok"] {
+      color: var(--ok);
+    }
+
+    .status-box[data-tone="warn"] {
+      color: var(--warn);
+    }
+
+    .status-box[data-tone="err"] {
+      color: var(--err);
+    }
+
+    .status-open-btn[hidden] {
+      display: none;
+    }
+
+    @media (max-width: 720px), (max-height: 640px) {
+      html,
+      body {
+        height: auto;
+        overflow-y: auto;
+      }
+
+      .workbench-app {
+        height: auto;
+        min-height: 100vh;
+        overflow: visible;
+      }
+
+      .workbench-body,
+      .split-grid,
+      .caption-col {
+        flex: 0 0 auto;
+        overflow: visible;
+      }
+
+      .media-col {
+        overflow: visible;
+      }
+
+      .preview-box {
+        flex: 0 0 auto;
+        height: 228px;
+      }
+
+      textarea {
+        flex: 0 0 auto;
+        min-height: 180px;
+        height: 220px;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .split-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .row {
+        flex-wrap: wrap;
+      }
+
+      .url-strip .input-wrap {
+        min-width: min(260px, 100%);
+      }
+
+      .topbar,
+      .url-strip,
+      .workbench-body,
+      .status-footer {
+        padding-left: 14px;
+        padding-right: 14px;
+      }
+    }
+
+    @media (max-width: 660px) {
+      .topbar {
+        flex-wrap: wrap;
+      }
+
+      .topbar-right {
+        width: 100%;
+        flex-wrap: wrap;
+        justify-content: flex-start;
+      }
+    }
+
+    @media (max-width: 440px) {
+      .actions-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .preview-box[data-state="loading"] .preview-empty,
+      .status-footer[data-busy="1"]::before {
+        animation: none;
+      }
+
+      button,
+      input,
+      select,
+      textarea {
+        transition: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="workbench-app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3v12"/>
+            <path d="m7 10 5 5 5-5"/>
+            <path d="M5 19h14"/>
+          </svg>
+        </span>
+        <div>
+          <h1 class="brand-title">IG-Now Downloader</h1>
+          <p class="subtitle">MP4 video, .m4a audio, images &amp; captions</p>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <span class="engine-status" id="engine-badge" data-ready="idle" title="Media muxing &amp; AAC extraction capability">MP4 AAC &middot; M4A Audio</span>
+        <button type="button" id="open-folder-btn" title="Open Downloads/IG-Now folder">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>
+          </svg>
+          Open Downloads
+        </button>
+      </div>
+    </header>
+
+    <section class="url-strip" aria-label="Link input">
+      <div class="label-row">
+        <label class="field-label" for="url-input">Instagram Post, Reel, or TV URL</label>
+        <span class="field-hint" id="url-hint">Auto-inspects on open or paste &middot; Ctrl+L to focus</span>
+      </div>
+      <div class="row">
+        <div class="input-wrap">
+          <input type="text" id="url-input" placeholder="https://www.instagram.com/reel/..." autocomplete="off" spellcheck="false">
+          <button type="button" id="clear-url-btn" class="clear-input-btn" aria-label="Clear link" title="Clear link" hidden>
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+              <path d="M18 6 6 18M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <button type="button" id="paste-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect width="8" height="4" x="8" y="2" rx="1"/>
+            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+          </svg>
+          Paste
+        </button>
+        <button type="button" id="inspect-btn" class="primary">Inspect Link</button>
+      </div>
+    </section>
+
+    <section class="workbench-body" id="post-section" aria-label="Formats and caption">
+      <div class="meta-bar">
+        <span id="post-summary">Waiting for a link. Open Downloader from any video or paste a URL above.</span>
+        <span id="destination-note">Saves to Downloads/IG-Now</span>
+      </div>
+
+      <div class="split-grid">
+        <div class="media-col">
+          <div class="preview-box" id="preview-box" data-state="idle">
+            <div class="preview-empty" id="preview-empty">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect width="18" height="14" x="3" y="5" rx="2"/>
+                <path d="m10 9 5 3-5 3z"/>
+              </svg>
+              <span id="preview-empty-text">Preview loads automatically on inspection</span>
+            </div>
+            <span class="preview-tag" id="preview-tag" hidden>MP4 &middot; AAC</span>
+          </div>
+
+          <div class="slide-strip" id="slide-strip" role="group" aria-label="Carousel slides" hidden></div>
+
+          <div>
+            <label class="field-label" for="slide-select">Media Item</label>
+            <div class="slide-picker-row">
+              <button type="button" id="prev-slide-btn" class="slide-step-btn" aria-label="Previous slide" title="Previous slide" disabled>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="m15 18-6-6 6-6"/>
+                </svg>
+              </button>
+              <select id="slide-select" disabled></select>
+              <button type="button" id="next-slide-btn" class="slide-step-btn" aria-label="Next slide" title="Next slide" disabled>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="m9 18 6-6-6-6"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label class="field-label" for="format-select">Video / Media Quality (.mp4 / .jpg)</label>
+            <select id="format-select" disabled></select>
+          </div>
+
+          <div class="spec-box" aria-label="Output specification">
+            <div class="spec-line">
+              <div class="spec-head">
+                <span>Output file stem</span>
+                <button type="button" id="copy-stem-btn" class="spec-copy-btn" disabled>Copy</button>
+              </div>
+              <span class="spec-value" id="output-name-preview">username-YYYYMMDD-hash.mp4</span>
+            </div>
+            <div class="spec-line">
+              <span>Selected stream &amp; audio</span>
+              <span class="spec-value" id="audio-spec-preview">AAC 192 kbps (44.1 kHz)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="caption-col">
+          <div class="caption-header">
+            <div class="caption-title-group">
+              <label class="field-label" for="caption-input" style="margin: 0;">Caption (.txt)</label>
+              <span class="field-hint" id="caption-count">0 chars</span>
+            </div>
+            <div class="row">
+              <button type="button" id="copy-caption-btn" class="compact-btn" disabled>Copy Caption</button>
+              <button type="button" id="save-caption-btn" class="compact-btn" title="Save caption text (.txt) to Downloads/IG-Now" disabled>Save (.txt)</button>
+            </div>
+          </div>
+
+          <textarea id="caption-input" placeholder="Inspected caption text appears here. You can edit it before saving."></textarea>
+
+          <div class="actions-grid">
+            <button type="button" id="download-selected-btn" class="primary" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/>
+              </svg>
+              <span id="download-selected-label">Download Video (.mp4)</span>
+            </button>
+            <button type="button" id="download-audio-btn" title="Extract 192 kbps stereo AAC (.m4a)" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M9 18V5l12-2v13"/>
+                <circle cx="6" cy="18" r="3"/>
+                <circle cx="18" cy="16" r="3"/>
+              </svg>
+              Audio Only (.m4a)
+            </button>
+            <button type="button" id="download-bundle-btn" title="Save all slides, caption.txt, and metadata.json into one folder" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
+                <path d="m3.3 7 8.7 5 8.7-5"/>
+                <path d="M12 22V12"/>
+              </svg>
+              <span id="download-bundle-label">Save Full Post</span>
+            </button>
+          </div>
+          <p class="actions-note" id="actions-note">Save Full Post exports all carousel slides alongside caption.txt and metadata.json into one dated folder.</p>
+        </div>
+      </div>
+    </section>
+
+    <footer class="status-footer" id="status-footer" data-busy="0">
+      <div class="status-box" id="status-box" role="status" aria-live="polite">Ready.</div>
+      <button type="button" id="status-open-btn" class="compact-btn status-open-btn" hidden>Open Folder</button>
+    </footer>
+  </main>
+  <script src="downloader.js"></script>
+</body>
+</html>

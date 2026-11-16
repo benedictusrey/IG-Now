@@ -1,6 +1,6 @@
 [package]
 name = "ig-now"
-version = "2.2.0"
+version = "2.5.0"
 description = "IG-Now Desktop Client"
 authors = []
 edition = "2021"
@@ -22,6 +22,8 @@ tauri-plugin-shell = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-notification = "2"
 tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 # Windows-only: Core Audio session mute/unmute for the process tree (audio.rs).
 # MUST stay target-gated — the `windows` crate pins windows-future 0.2.1, whose

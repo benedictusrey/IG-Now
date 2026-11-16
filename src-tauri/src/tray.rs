@@ -18,8 +18,12 @@ use tauri_plugin_shell::ShellExt;
 /// Label of the Launch-on-Startup row. The menu is built once, so the row's
 /// state is read from the OS (autostart registry) at build time and after
 /// every toggle — the menu must never show a stale ON/OFF.
-const AUTOSTART_ON: &str = "🚀 Launch on Startup: ON";
-const AUTOSTART_OFF: &str = "🚀 Launch on Startup: OFF";
+const AUTOSTART_ON: &str = "Launch on Startup: On";
+const AUTOSTART_OFF: &str = "Launch on Startup: Off";
+
+fn resolve_autostart_enabled(after_toggle: Option<bool>, fallback_previous: bool) -> bool {
+    after_toggle.unwrap_or(fallback_previous)
+}
 
 /// One row of the IG-Now tray menu, described as data so the structure is
 /// locked by unit tests (see `menu_tests` below): row set, order, and the
@@ -46,10 +50,11 @@ enum MenuRow {
 ///   Places ▸        (Home feed / Explore / Reels / DMs / Notifications /
 ///                    My profile / ─ / Refresh)
 ///   View ▸          (Zoom in / Zoom out / Reset zoom / ─ / ✓ Always on top)
-///   Tools ▸         (Open downloads folder / Compact memory and cache /
-///                    Devtools / Copy URL / Open in browser / Cobalt /
-///                    🚀 Launch on Startup)
-///   How to IG-Now ▸ (the seven gesture hints)
+///   Tools ▸         (Open downloads folder / IG-Now Downloader /
+///                    Copy page URL / Open page in browser / ─ /
+///                    Compact memory and cache / Test message notification /
+///                    Developer tools / ─ / Launch on Startup)
+///   How to IG-Now ▸ (seven concise gesture & shortcut hints)
 ///   ──────────────────
 ///   About IG-Now
 ///   ──────────────────
@@ -70,15 +75,15 @@ const MENU_LAYOUT: &[MenuRow] = &[
             MenuRow::Item("ig_notif", "Notifications"),
             MenuRow::Item("ig_profile", "My profile"),
             MenuRow::Separator,
-            MenuRow::Item("refresh", "Refresh"),
+            MenuRow::Item("refresh", "Refresh page"),
         ],
     ),
     MenuRow::Submenu(
         "view",
         "View",
         &[
-            MenuRow::Item("zoom_in", "Zoom in"),
-            MenuRow::Item("zoom_out", "Zoom out"),
+            MenuRow::Item("zoom_in", "Zoom in (+10%)"),
+            MenuRow::Item("zoom_out", "Zoom out (-10%)"),
             MenuRow::Item("zoom_reset", "Reset zoom (100%)"),
             MenuRow::Separator,
             MenuRow::Checkbox("always_top", "Always on top"),
@@ -89,41 +94,42 @@ const MENU_LAYOUT: &[MenuRow] = &[
         "Tools",
         &[
             MenuRow::Item("open_downloads", "Open downloads folder"),
-            MenuRow::Item("clear_mem", "Compact memory and cache"),
-            MenuRow::Item("devtools", "Developer tools"),
+            MenuRow::Item("cobalt_guide", "IG-Now Downloader"),
             MenuRow::Item("copy_url", "Copy page URL"),
             MenuRow::Item("open_browser", "Open page in browser"),
-            MenuRow::Item("cobalt_guide", "Cobalt video downloader"),
-            MenuRow::Item("test_notification", "Test message notification"),
             MenuRow::Separator,
-            MenuRow::Item("autostart", "🚀 Launch on Startup"),
+            MenuRow::Item("clear_mem", "Compact memory and cache"),
+            MenuRow::Item("test_notification", "Test message notification"),
+            MenuRow::Item("devtools", "Developer tools"),
+            MenuRow::Separator,
+            MenuRow::Item("autostart", "Launch on Startup"),
         ],
     ),
     MenuRow::Submenu(
         "how_to",
         "How to IG-Now",
         &[
-            MenuRow::Hint(
-                "usage_zoom",
-                "Ctrl + left-click image: open viewer and zoom",
-            ),
-            MenuRow::Hint(
-                "usage_save",
-                "Right-click image/video: save to your Downloads / IG-Now folder",
-            ),
-            MenuRow::Hint("usage_link", "Right-click link: open in default browser"),
-            MenuRow::Hint(
-                "usage_seek",
-                "Every video: click/drag the seek line or use the -5s/+5s buttons; Reels: prev/next buttons (or Up/Down arrows)",
-            ),
-            MenuRow::Hint("usage_escape", "Esc: close viewer or leave a Reel"),
-            MenuRow::Hint(
-                "usage_like",
-                "Normal click, double-click, and carousel drag stay Instagram actions",
-            ),
+            MenuRow::Hint("usage_zoom", "Image zoom: Ctrl + Left-click any photo"),
+            MenuRow::Hint("usage_save", "Quick save: Right-click photo or video"),
             MenuRow::Hint(
                 "usage_cobalt",
-                "Video: copy link and open Cobalt, then save to your Downloads / IG-Now folder",
+                "Downloader: Sidebar or video bar for MP4, M4A & captions",
+            ),
+            MenuRow::Hint(
+                "usage_seek",
+                "Seek & Reels: Drag line, -5s/+5s, or arrow keys",
+            ),
+            MenuRow::Hint(
+                "usage_escape",
+                "Navigate back: Sidebar Back, Alt+Left, or Esc",
+            ),
+            MenuRow::Hint(
+                "usage_link",
+                "External links: Right-click link to open in browser",
+            ),
+            MenuRow::Hint(
+                "usage_like",
+                "Instagram actions: Click, double-click, and swipe stay native",
             ),
         ],
     ),
@@ -335,194 +341,240 @@ fn sync_menu_state_to_reality(
 }
 
 /// In-page About overlay for the Instagram window:
-/// a seamless card rendered INSIDE the page (no separate window hop). The
+/// a seamless dialog rendered INSIDE the page (no separate window hop). The
 /// `__VERSION__` placeholder is replaced with the real package version.
 const ABOUT_JS: &str = r##"(function() {
   var ID = '__ignow_about';
+  var STYLE_ID = '__ignow_about_style';
   var old = document.getElementById(ID);
-  if (old) { old.remove(); return; }
+  if (old) {
+    if (typeof old.__ignowClose === 'function') old.__ignowClose();
+    else old.remove();
+    return;
+  }
 
+  var prevStyle = document.getElementById(STYLE_ID);
+  if (prevStyle) prevStyle.remove();
+
+  var styleEl = document.createElement('style');
+  styleEl.id = STYLE_ID;
+  styleEl.textContent =
+    '#' + ID + '{position:fixed;inset:0;background:rgba(6,7,10,0.80);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);' +
+    'display:flex;align-items:center;justify-content:center;padding:20px;z-index:2147483647;' +
+    'font-family:"Segoe UI Variable Text","Segoe UI",-apple-system,BlinkMacSystemFont,Roboto,sans-serif;opacity:0;transition:opacity 160ms ease;}' +
+    '#' + ID + '[data-open="1"]{opacity:1;}' +
+    '#' + ID + ' *{box-sizing:border-box;}' +
+    '#' + ID + ' ::selection{background:rgba(59,130,246,0.32);color:#f8fafc;}' +
+    '#' + ID + '_card{width:540px;max-width:100%;max-height:88vh;overflow-y:auto;background:#101217;' +
+    'border:1px solid rgba(255,255,255,0.12);border-radius:14px;box-shadow:0 24px 64px rgba(0,0,0,0.78);color:#f4f5f7;text-align:left;' +
+    'transform:translateY(6px) scale(0.99);transition:transform 180ms cubic-bezier(0.2,0.8,0.2,1);scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.22) transparent;}' +
+    '#' + ID + '[data-open="1"] #' + ID + '_card{transform:translateY(0) scale(1);}' +
+    '#' + ID + '_card::-webkit-scrollbar{width:6px;}' +
+    '#' + ID + '_card::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.22);border-radius:999px;}' +
+    '#' + ID + ' .ignow-ab-btn{height:34px;padding:0 14px;background:#191c23;color:#e5e7eb;font:500 12px/1 inherit;' +
+    'border:1px solid rgba(255,255,255,0.15);border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;' +
+    'transition:background 120ms ease,border-color 120ms ease,transform 80ms ease;}' +
+    '#' + ID + ' .ignow-ab-btn:hover{background:#232731;border-color:rgba(255,255,255,0.28);}' +
+    '#' + ID + ' .ignow-ab-btn:active{transform:translateY(1px);}' +
+    '#' + ID + ' .ignow-ab-btn--primary{background:#f4f5f7;color:#0b0c0f;border-color:#f4f5f7;font-weight:600;}' +
+    '#' + ID + ' .ignow-ab-btn--primary:hover{background:#e4e7ec;border-color:#e4e7ec;}' +
+    '#' + ID + ' .ignow-ab-iconbtn{width:32px;height:32px;padding:0;justify-content:center;}' +
+    '#' + ID + ' .ignow-ab-ver{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;' +
+    'background:#191c23;border:1px solid rgba(255,255,255,0.14);color:#d7dce5;font:500 12px/1.2 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;' +
+    'cursor:pointer;transition:background 120ms ease,border-color 120ms ease;}' +
+    '#' + ID + ' .ignow-ab-ver:hover{background:#232731;border-color:rgba(255,255,255,0.28);color:#f4f5f7;}' +
+    '#' + ID + ' .ignow-ab-link{color:#f4f5f7;text-decoration:underline;text-underline-offset:3px;font-weight:600;cursor:pointer;}' +
+    '#' + ID + ' .ignow-ab-link:hover{color:#93c5fd;}' +
+    '#' + ID + ' .ignow-ab-btn:focus-visible,#' + ID + ' .ignow-ab-ver:focus-visible,#' + ID + ' .ignow-ab-link:focus-visible,#' + ID + '_card:focus-visible{outline:2px solid #3b82f6;outline-offset:2px;}' +
+    '#' + ID + ' .ignow-ab-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 20px;}' +
+    '#' + ID + ' .ignow-ab-feat{display:flex;align-items:flex-start;gap:10px;min-width:0;}' +
+    '#' + ID + ' .ignow-ab-featic{width:28px;height:28px;border-radius:7px;background:#171920;border:1px solid rgba(255,255,255,0.08);' +
+    'color:#c4cad6;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;}' +
+    '#' + ID + ' .ignow-ab-feattitle{color:#f4f5f7;font-size:12.5px;font-weight:600;line-height:1.3;}' +
+    '#' + ID + ' .ignow-ab-featdesc{color:#9aa1b0;font-size:12px;line-height:1.4;margin-top:2px;}' +
+    '#' + ID + ' .ignow-ab-kbd{background:#0b0c0f;border:1px solid rgba(255,255,255,0.17);border-radius:4px;padding:1px 6px;' +
+    'color:#f4f5f7;font:500 12px/1.3 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}' +
+    '@media (max-width:520px){#' + ID + ' .ignow-ab-grid{grid-template-columns:1fr;}}' +
+    '@media (prefers-reduced-motion:reduce){#' + ID + ',#' + ID + '_card,#' + ID + ' .ignow-ab-btn{transition:none!important;}}';
+  (document.head || document.documentElement).appendChild(styleEl);
+
+  var previousFocus = document.activeElement;
   function el(tag, css, extra) {
     var e = document.createElement(tag);
     if (css) e.style.cssText = css;
     if (extra) Object.assign(e, extra);
     return e;
   }
-  function close() { var o = document.getElementById(ID); if (o) o.remove(); }
-  // Esc closes (once — the listener removes itself with the overlay)
-  document.addEventListener('keydown', function escClose(e) {
-    if (e.key === 'Escape') {
-      close();
-      document.removeEventListener('keydown', escClose);
+  function openUrl(url) {
+    try {
+      if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {
+        window.__TAURI__.core.invoke('open_external_url', { url: url })
+          .catch(function() { window.open(url, '_blank', 'noopener,noreferrer'); });
+      } else {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      }
+    } catch (err) {
+      window.open(url, '_blank', 'noopener,noreferrer');
     }
-  });
+  }
+  function escClose(e) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      close();
+    }
+  }
+  function close() {
+    document.removeEventListener('keydown', escClose, true);
+    var o = document.getElementById(ID);
+    if (o) o.remove();
+    var s = document.getElementById(STYLE_ID);
+    if (s) s.remove();
+    if (previousFocus && typeof previousFocus.focus === 'function') {
+      try { previousFocus.focus(); } catch (err) {}
+    }
+  }
+  document.addEventListener('keydown', escClose, true);
 
-  var overlay = el('div',
-    'position:fixed;top:0;left:0;width:100vw;height:100vh;' +
-    'background:rgba(8,8,12,0.78);backdrop-filter:blur(16px) saturate(140%);' +
-    '-webkit-backdrop-filter:blur(16px) saturate(140%);display:flex;align-items:center;' +
-    'justify-content:center;z-index:2147483647;opacity:0;transition:opacity 180ms ease;' +
-    'font-family:system-ui,-apple-system,Segoe UI,sans-serif;');
+  var overlay = el('div');
   overlay.id = ID;
-  requestAnimationFrame(function() { overlay.style.opacity = '1'; });
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-labelledby', ID + '_title');
+  overlay.__ignowClose = close;
   overlay.onclick = function(e) { if (e.target === overlay) { close(); } };
 
-  var card = el('div',
-    'background:linear-gradient(160deg,#17171d 0%,#101014 100%);' +
-    'border:1px solid rgba(225,48,108,0.35);border-radius:20px;' +
-    'padding:0;width:460px;max-width:92vw;max-height:88vh;overflow-y:auto;' +
-    'position:relative;box-shadow:0 24px 70px rgba(0,0,0,0.85),0 0 0 1px rgba(255,255,255,0.03) inset;' +
-    'color:#fff;text-align:center;transform:translateY(8px) scale(0.98);' +
-    'transition:transform 220ms cubic-bezier(0.2,0.9,0.3,1);');
-  requestAnimationFrame(function() {
-    card.style.transform = 'translateY(0) scale(1)';
-  });
+  var card = el('div');
+  card.id = ID + '_card';
+  card.tabIndex = -1;
 
-  // Banner header — gradient wash with the logo mark, not a flat border box
-  var banner = el('div',
-    'background:linear-gradient(135deg,rgba(245,133,41,0.16),rgba(221,42,123,0.16),rgba(129,52,175,0.16),rgba(81,91,212,0.16));' +
-    'padding:2rem 2rem 1.2rem;border-radius:20px 20px 0 0;');
-  card.appendChild(banner);
-
-  // Close X — visible focus, larger hit area
-  var closeX = el('button',
-    'position:absolute;top:12px;right:12px;width:34px;height:34px;background:rgba(255,255,255,0.06);' +
-    'border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#a7a1b4;font-size:20px;' +
-    'cursor:pointer;line-height:1;');
-  closeX.textContent = '\u00d7';
-  closeX.onclick = close;
-  card.appendChild(closeX);
-
-  // IG-Now logo — the app's own icon (128x128 PNG) embedded as a data URL
-  // (placeholder replaced with the real base64 by show_about before eval).
-  // No network request, works on Instagram's remote page, renders crisp on
-  // any DPI; drop-shadow keeps it visible over the gradient banner.
+  var header = el('div',
+    'display:flex;align-items:center;justify-content:space-between;gap:14px;' +
+    'padding:18px 22px 16px;border-bottom:1px solid rgba(255,255,255,0.09);background:#0c0d11;border-radius:14px 14px 0 0;');
+  var brandRow = el('div', 'display:flex;align-items:center;gap:14px;min-width:0;');
   var logo = el('img',
-    'width:76px;height:76px;display:block;margin:0 auto 0.9rem;' +
-    'border-radius:18px;box-shadow:0 6px 24px rgba(0,0,0,0.55),0 0 0 1px rgba(255,255,255,0.08);');
+    'width:46px;height:46px;display:block;border-radius:11px;flex-shrink:0;' +
+    'border:1px solid rgba(255,255,255,0.12);box-shadow:0 6px 18px rgba(0,0,0,0.45);');
   logo.src = 'data:image/png;base64,' + `__LOGO_B64__`;
   logo.alt = 'IG-Now logo';
   logo.draggable = false;
-  banner.appendChild(logo);
-
-  // Kicker — explicit line-height: Instagram's global CSS sets `h2 { line-height: 18px }`,
-  // which CROPS gradient-clipped titles; every text element here pins its own.
-  var kicker = el('p',
-    'color:#9b95ab;font-size:10px;font-weight:800;letter-spacing:1.5px;' +
-    'line-height:1.4;margin:0 0 4px;text-transform:uppercase;');
-  kicker.textContent = 'Instagram Desktop View';
-  banner.appendChild(kicker);
-
-  // Title
-  var h2 = el('h2',
-    'font-size:2rem;font-weight:800;line-height:1.25;padding:0.1em 0;margin:0 0 0.35rem;' +
-    'background:linear-gradient(135deg,#F58529,#DD2A7B,#8134AF,#515BD4);' +
-    '-webkit-background-clip:text;-webkit-text-fill-color:transparent;');
+  var titleCol = el('div', 'min-width:0;');
+  var titleRow = el('div', 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;');
+  var h2 = el('h2', 'margin:0;font-size:17px;font-weight:700;line-height:1.25;letter-spacing:-0.015em;color:#f4f5f7;');
+  h2.id = ID + '_title';
   h2.textContent = 'IG-Now';
-  banner.appendChild(h2);
+  var verBtn = el('button', '', { type: 'button', className: 'ignow-ab-ver', title: 'Copy version details' });
+  verBtn.textContent = 'v__VERSION__';
+  verBtn.setAttribute('aria-label', 'Copy IG-Now version v__VERSION__');
+  verBtn.onclick = function() {
+    var summary = 'IG-Now v__VERSION__ (Desktop Client · Rust & Tauri v2)';
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(summary).then(function() {
+        verBtn.textContent = 'Copied';
+        setTimeout(function() { verBtn.textContent = 'v__VERSION__'; }, 1400);
+      }).catch(function() {});
+    }
+  };
+  titleRow.appendChild(h2);
+  titleRow.appendChild(verBtn);
+  var metaLine = el('p', 'margin:4px 0 0;font-size:12px;line-height:1.4;color:#a4aab6;');
+  metaLine.textContent = 'Instagram Desktop Client · Rust & Tauri v2';
+  titleCol.appendChild(titleRow);
+  titleCol.appendChild(metaLine);
+  brandRow.appendChild(logo);
+  brandRow.appendChild(titleCol);
+  header.appendChild(brandRow);
 
-  // Version badge — pill, not a plain text line
-  var ver = el('span',
-    'display:inline-block;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);' +
-    'color:#c9c9d2;font-size:0.72rem;font-weight:600;letter-spacing:0.4px;line-height:1.4;' +
-    'padding:0.25rem 0.85rem;border-radius:999px;');
-  ver.textContent = 'v__VERSION__ · Rust + Tauri v2';
-  banner.appendChild(ver);
+  var closeX = el('button', '', { type: 'button', className: 'ignow-ab-btn ignow-ab-iconbtn' });
+  closeX.setAttribute('aria-label', 'Close About window');
+  closeX.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+  closeX.onclick = close;
+  header.appendChild(closeX);
+  card.appendChild(header);
 
-  // Body
-  var body = el('div', 'padding:1.4rem 2rem 1.8rem;');
-  card.appendChild(body);
-
-  var sub = el('p',
-    'color:#E1306C;font-size:0.86rem;font-weight:bold;line-height:1.4;margin:0 0 1rem;');
-  sub.textContent = 'Your focused Instagram desktop experience';
-  body.appendChild(sub);
-
-  // Feature list — compact two-column grid of what the app actually does
-  var feats = el('div',
-    'display:grid;grid-template-columns:1fr 1fr;gap:0.45rem 0.9rem;text-align:left;' +
-    'margin:0 0 1.2rem;');
-  [
-    ['\u25b6', 'Reels with seek & volume controls'],
-    ['\u23f8', 'Auto-pause & silence on minimize'],
-    ['\u2b07', 'One-click media saving to Downloads'],
-    ['\u1f5d2', 'Native tray with quick places'],
-    ['\u2328', 'Keyboard seeking (\u2190 \u2192) & Esc'],
-    ['\u26a1', 'Lightweight native window'],
-  ].forEach(function (f) {
-    var row = el('div', 'display:flex;align-items:flex-start;gap:0.45rem;');
-    var ic = el('span', 'color:#DD2A7B;font-size:0.78rem;line-height:1.5;');
-    ic.textContent = f[0];
-    var tx = el('span', 'color:#c9c9d2;font-size:0.76rem;line-height:1.5;');
-    tx.textContent = f[1];
-    row.appendChild(ic); row.appendChild(tx);
+  var body = el('div', 'padding:18px 22px 20px;display:flex;flex-direction:column;gap:16px;');
+  var feats = el('div', '', { className: 'ignow-ab-grid' });
+  var items = [
+    ['<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 4 20 12 6 20 6 4"/></svg>',
+      'Reels & Video Controls', 'Seek line, ±5s skip, and synced volume slider'],
+    ['<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg>',
+      'Native Downloader', 'H.264+AAC .mp4, .m4a audio, and post bundles'],
+    ['<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>',
+      'Foreground Audio Sync', 'Grouped IG-Now mixer & pause-on-hide guard'],
+    ['<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>',
+      'Back Navigation & Esc', 'Sidebar Back & Esc return to pre-click view'],
+    ['<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+      'DM Alerts & Links', 'Native unread alerts and safe external links'],
+    ['<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg>',
+      'System Tray & Layout', 'Close-to-tray & native Instagram comments intact']
+  ];
+  items.forEach(function (f) {
+    var row = el('div', '', { className: 'ignow-ab-feat' });
+    var ic = el('span', '', { className: 'ignow-ab-featic' });
+    ic.innerHTML = f[0];
+    var copy = el('div', 'min-width:0;');
+    var ttl = el('div', '', { className: 'ignow-ab-feattitle', textContent: f[1] });
+    var dsc = el('div', '', { className: 'ignow-ab-featdesc', textContent: f[2] });
+    copy.appendChild(ttl);
+    copy.appendChild(dsc);
+    row.appendChild(ic);
+    row.appendChild(copy);
     feats.appendChild(row);
   });
   body.appendChild(feats);
 
-  // Author + repo link row
-  var author = el('div', 'font-size:0.78rem;line-height:1.5;color:#8e8ea0;margin-bottom:1.3rem;');
+  var keysStrip = el('div',
+    'display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;padding:10px 12px;' +
+    'border-radius:8px;background:#16181f;border:1px solid rgba(255,255,255,0.08);' +
+    'font-size:12px;line-height:1.4;color:#a4aab6;');
+  keysStrip.innerHTML =
+    '<span><kbd class="ignow-ab-kbd">Esc</kbd> Back / close</span>' +
+    '<span><kbd class="ignow-ab-kbd">&larr; &rarr;</kbd> Seek &plusmn;5s</span>' +
+    '<span><kbd class="ignow-ab-kbd">&uarr; &darr;</kbd> Prev / next reel</span>' +
+    '<span><kbd class="ignow-ab-kbd">Alt+&larr;</kbd> History back</span>' +
+    '<span><kbd class="ignow-ab-kbd">Ctrl+Click</kbd> Zoom image</span>';
+  body.appendChild(keysStrip);
+
+  var footer = el('div',
+    'display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;' +
+    'padding-top:12px;border-top:1px solid rgba(255,255,255,0.09);');
+  var author = el('div', 'font-size:12px;line-height:1.4;color:#a4aab6;');
   var authorLink = document.createElement('a');
+  authorLink.className = 'ignow-ab-link';
   authorLink.textContent = '@benedictusrey';
   authorLink.href = 'https://github.com/benedictusrey';
-  authorLink.style.cssText = 'color:#E1306C;text-decoration:none;font-weight:bold;cursor:pointer;';
   authorLink.onclick = function(e) {
     e.preventDefault();
     e.stopImmediatePropagation();
-    try {
-      if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {
-        // Opens in the OS default browser via the native bridge; if that
-        // fails for any reason, fall back to a plain new-window open.
-        window.__TAURI__.core.invoke('open_external_url', { url: 'https://github.com/benedictusrey' })
-          .catch(function() { window.open('https://github.com/benedictusrey', '_blank'); });
-      } else {
-        window.open('https://github.com/benedictusrey', '_blank');
-      }
-    } catch (err) {
-      window.open('https://github.com/benedictusrey', '_blank');
-    }
+    openUrl('https://github.com/benedictusrey');
   };
-  author.appendChild(document.createTextNode('Authored and maintained with \u2764 by '));
+  author.appendChild(document.createTextNode('Maintained by '));
   author.appendChild(authorLink);
-  body.appendChild(author);
+  footer.appendChild(author);
 
-  // Footer buttons row — Got It (primary) + project repo (ghost)
-  var actions = el('div', 'display:flex;gap:0.7rem;justify-content:center;align-items:center;');
-  var gotit = el('button',
-    'background:linear-gradient(135deg,#F58529,#DD2A7B,#8134AF,#515BD4);color:#fff;font-weight:bold;' +
-    'border:none;padding:0.7rem 2.2rem;border-radius:12px;cursor:pointer;line-height:1.4;' +
-    'font-size:0.92rem;box-shadow:0 4px 15px rgba(225,48,108,0.3);');
-  gotit.textContent = 'Got It!';
-  gotit.onclick = close;
-  var repoBtn = el('button',
-    'background:transparent;color:#c9c9d2;font-weight:600;border:1px solid rgba(255,255,255,0.14);' +
-    'padding:0.7rem 1.3rem;border-radius:12px;cursor:pointer;line-height:1.4;font-size:0.88rem;');
+  var actions = el('div', 'display:flex;gap:8px;align-items:center;');
+  var repoBtn = el('button', '', { type: 'button', className: 'ignow-ab-btn' });
   repoBtn.textContent = 'GitHub \u2197';
   repoBtn.onclick = function(e) {
     e.preventDefault();
     e.stopImmediatePropagation();
-    try {
-      if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {
-        window.__TAURI__.core.invoke('open_external_url', { url: 'https://github.com/benedictusrey/IG-Now' })
-          .catch(function() { window.open('https://github.com/benedictusrey/IG-Now', '_blank'); });
-      } else {
-        window.open('https://github.com/benedictusrey/IG-Now', '_blank');
-      }
-    } catch (err) {
-      window.open('https://github.com/benedictusrey/IG-Now', '_blank');
-    }
+    openUrl('https://github.com/benedictusrey/IG-Now');
   };
-  actions.appendChild(gotit);
+  var gotit = el('button', '', { type: 'button', className: 'ignow-ab-btn ignow-ab-btn--primary' });
+  gotit.textContent = 'Close';
+  gotit.onclick = close;
   actions.appendChild(repoBtn);
-  body.appendChild(actions);
+  actions.appendChild(gotit);
+  footer.appendChild(actions);
+  body.appendChild(footer);
 
-  // Hint: how to dismiss (discoverability for the Esc path)
-  var hint = el('p', 'color:#6f6a7c;font-size:0.7rem;line-height:1.4;margin:0.9rem 0 0;');
-  hint.textContent = 'Esc or click outside to close';
-  body.appendChild(hint);
-
+  card.appendChild(body);
   overlay.appendChild(card);
   document.body.appendChild(overlay);
+  requestAnimationFrame(function() {
+    overlay.setAttribute('data-open', '1');
+    gotit.focus();
+  });
 })();"##;
 
 fn launch_instagram_in_background(app: &AppHandle) {
@@ -589,7 +641,7 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     TrayIconBuilder::with_id("main")
         .icon(icon)
         .menu(&menu)
-        .tooltip("IG-Now Desktop")
+        .tooltip(concat!("IG-Now Desktop v", env!("CARGO_PKG_VERSION")))
         .show_menu_on_left_click(false)
         .on_menu_event(move |app, event| match event.id.as_ref() {
             "show_hide" => toggle_show_hide(app),
@@ -600,22 +652,22 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn Error>> {
             "ig_notif" => navigate(app, "/notifications/"),
             "ig_profile" => navigate(app, "/accounts/edit/"),
             "refresh" => {
-                if let Some(window) = active_instagram(app) {
+                if let Some(window) = open_instagram_window(app) {
                     let _ = window.eval("window.location.reload();");
                 }
             }
             "zoom_in" => {
-                if let Some(window) = active_instagram(app) {
+                if let Some(window) = open_instagram_window(app) {
                     let _ = window.eval(&zoom_in_js());
                 }
             }
             "zoom_out" => {
-                if let Some(window) = active_instagram(app) {
+                if let Some(window) = open_instagram_window(app) {
                     let _ = window.eval(&zoom_out_js());
                 }
             }
             "zoom_reset" => {
-                if let Some(window) = active_instagram(app) {
+                if let Some(window) = open_instagram_window(app) {
                     let _ = window.eval(&zoom_reset_js());
                 }
             }
@@ -625,27 +677,32 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn Error>> {
             "always_top" => {
                 if let Some(window) = active_instagram(app) {
                     if let Ok(is_top) = window.is_always_on_top() {
-                        let _ = window.set_always_on_top(!is_top);
-                        let _ = always_top_handle.set_checked(!is_top);
+                        let next_top = !is_top;
+                        let _ = window.set_always_on_top(next_top);
+                        let _ = always_top_handle.set_checked(next_top);
+                        let _ = window.eval(&format!(
+                            "if (window.showToast) window.showToast('Always on top: {}');",
+                            if next_top { "On" } else { "Off" }
+                        ));
                     }
                 }
             }
             "clear_mem" => {
                 if let Some(window) = active_instagram(app) {
                     let _ = window.eval(
-                        "if (window.caches) caches.keys().then(keys => keys.forEach(key => caches.delete(key)));",
+                        "if (window.caches) caches.keys().then(keys => keys.forEach(key => caches.delete(key))); if (window.showToast) window.showToast('Cleared cached page data');",
                     );
                 }
             }
             "devtools" => {
-                if let Some(window) = active_instagram(app) {
+                if let Some(window) = open_instagram_window(app) {
                     let _ = window.open_devtools();
                 }
             }
             "copy_url" => {
                 if let Some(window) = active_instagram(app) {
                     let _ = window.eval(
-                        "navigator.clipboard.writeText(window.location.href).catch(() => {});",
+                        "(function(){var u=window.location.href,ok=function(){if(window.showToast)window.showToast('Copied page URL to clipboard');},fail=function(){if(window.showToast)window.showToast('Could not copy page URL');};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(u).then(ok).catch(function(){try{var t=document.createElement('textarea');t.value=u;t.style.cssText='position:fixed;opacity:0';document.body.appendChild(t);t.select();var c=document.execCommand('copy');t.remove();c?ok():fail();}catch(e){fail();}});}else{fail();}})();",
                     );
                 }
             }
@@ -677,39 +734,59 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn Error>> {
                 }
             }
             "cobalt_guide" => {
-                if let Err(error) = app.shell().open("https://cobalt.tools/", None) {
-                    eprintln!("[IG-Now] Failed to open the Cobalt setup guide: {error}");
-                }
+                let app_handle = app.clone();
+                std::thread::spawn(move || {
+                    if let Err(error) =
+                        crate::open_downloader_window_internal(&app_handle, None, None, None, None)
+                    {
+                        eprintln!("[IG-Now] Failed to open IG-Now Downloader: {error}");
+                    }
+                });
             }
             "test_notification" => {
                 if let Err(error) = crate::notifications::test_message_notification(app.clone()) {
                     eprintln!("[IG-Now] Notification test failed: {error}");
+                    if let Some(window) = active_instagram(app) {
+                        let _ = window.eval(
+                            "if (window.showToast) window.showToast('OS notification blocked or unavailable');",
+                        );
+                    }
                 }
             }
             "autostart" => {
                 use tauri_plugin_autostart::ManagerExt;
                 let autol = app.autolaunch();
                 let was_enabled = autol.is_enabled().unwrap_or(false);
-                if was_enabled {
-                    let _ = autol.disable();
+                let toggle_res = if was_enabled {
+                    autol.disable()
                 } else {
-                    let _ = autol.enable();
+                    autol.enable()
+                };
+                if let Err(ref error) = toggle_res {
+                    eprintln!("[IG-Now] Autostart toggle failed: {error}");
                 }
-                let now_enabled = !was_enabled;
+                let now_enabled =
+                    resolve_autostart_enabled(autol.is_enabled().ok(), was_enabled);
                 let _ = autostart_handle.set_text(if now_enabled {
                     AUTOSTART_ON
                 } else {
                     AUTOSTART_OFF
                 });
                 if let Some(window) = active_instagram(app) {
+                    let msg = if toggle_res.is_err() {
+                        "Could not update Launch on Startup setting"
+                    } else if now_enabled {
+                        "Launch on Startup: On"
+                    } else {
+                        "Launch on Startup: Off"
+                    };
                     let _ = window.eval(&format!(
-                        "if (window.showToast) window.showToast('🚀 Launch on Startup: {}');",
-                        if now_enabled { "ON" } else { "OFF" }
+                        "if (window.showToast) window.showToast('{msg}');",
                     ));
                 }
             }
             "about" => show_about(app),
-            "quit" => std::process::exit(0),
+            "quit" => app.exit(0),
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -901,6 +978,14 @@ mod menu_tests {
         assert!(js.contains("__ignow_about"), "root id changed");
         assert!(js.contains("'Escape'"), "Esc-to-close listener missing");
         assert!(
+            js.contains("removeEventListener('keydown', escClose"),
+            "close() must clean up keydown listener"
+        );
+        assert!(
+            js.contains("role', 'dialog'") && js.contains("aria-modal', 'true'"),
+            "dialog ARIA semantics missing"
+        );
+        assert!(
             js.contains("e.target === overlay"),
             "backdrop close missing"
         );
@@ -921,6 +1006,14 @@ mod menu_tests {
         // the embedded logo constant decodes back to the exact app icon
         let decoded = logo_png_bytes();
         assert_eq!(decoded.len(), 10_329, "embedded logo size drifted");
+    }
+
+    #[test]
+    fn autostart_resolution_preserves_previous_state_on_os_error() {
+        assert!(super::resolve_autostart_enabled(Some(true), false));
+        assert!(!super::resolve_autostart_enabled(Some(false), true));
+        assert!(super::resolve_autostart_enabled(None, true));
+        assert!(!super::resolve_autostart_enabled(None, false));
     }
 
     /// The app icon bytes, re-decoded from the embedded base64 — proves the
@@ -986,6 +1079,18 @@ mod menu_tests {
                 .skip(1)
                 .any(|r| matches!(r, MenuRow::Separator)),
             "autostart must be separated from the action rows"
+        );
+        assert!(
+            rows.iter()
+                .any(|r| matches!(r, MenuRow::Item("cobalt_guide", "IG-Now Downloader"))),
+            "Tools must expose IG-Now Downloader instead of Cobalt"
+        );
+        assert!(
+            !rows
+                .iter()
+                .filter_map(|r| label_of(r))
+                .any(|label| label.to_ascii_lowercase().contains("cobalt")),
+            "Cobalt external label must not remain in tray menu"
         );
     }
 }

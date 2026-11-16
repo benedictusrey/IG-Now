@@ -48,28 +48,33 @@ sudo apt update && sudo apt install -y \
 
 ```
 IG-Now/
-├── frontend/                     # Assets embedded by Tauri (logo) + injected page tools
-│   └── instagram-tools.js        # Script injected into EVERY Instagram page
-│                                 # (media tools, video controls, seek/volume sync)
-├── src-tauri/                   # The Rust application core
-│   ├── src/main.rs              # App entry point
-│   ├── src/lib.rs               # Window lifecycle, playback watchdog, commands
-│   ├── src/tray.rs              # System-tray menu, show/hide toggle, About overlay
-│   ├── src/audio.rs             # Windows-only: Core Audio session mute guarantee
-│   ├── src/about_logo.rs        # Embedded base64 app logo for local About card
-│   ├── capabilities/            # Tauri permission capabilities
-│   └── tauri.conf.json          # App bundle configuration
-├── docs/assets/                 # Documentation showcase screenshots
-│   ├── IG-Now hero.png          # App showcase banner
-│   ├── IG-Now features.png      # Media controls & player overlay showcase
-│   └── IG-Now tray.png          # System tray menu and shortcuts showcase
-├── releases/                    # Release staging & version index
-│   ├── versions.json            # Machine-readable version catalog
-│   └── versions/vX.Y.Z/         # Version manifests
-├── .github/                     # GitHub workflows and PR templates
-│   ├── workflows/release.yml    # Universal cross-platform build pipeline
-│   └── PULL_REQUEST_TEMPLATE.md # Contributor PR submission template
-├── LICENSE                      # IG-Now source and contribution license
+├── frontend/                     # Assets embedded by Tauri (logo, downloader UI) + injected scripts
+│   ├── downloader.html           # Standalone native IG-Now Downloader window shell
+│   ├── downloader.js             # Downloader inspection, carousel/caption state & IPC calls
+│   ├── direct-messages.js        # DM link extraction, unread reporting & scroll fixes
+│   └── instagram-tools.js        # Injected Instagram helpers (video bar, sidebar nav, image triggers)
+├── src-tauri/                    # The Rust application core
+│   ├── src/main.rs               # App entry point
+│   ├── src/lib.rs                # Window geometry/lifecycle, playback watchdog, Tauri commands
+│   ├── src/downloader.rs         # Native post inspection, DASH/FFmpeg muxing & validation
+│   ├── src/notifications.rs      # DM unread desktop notification state
+│   ├── src/tray.rs               # System-tray menu, show/hide toggle, About overlay
+│   ├── src/audio.rs              # Windows-only: Core Audio session management & mute guarantee
+│   ├── src/about_logo.rs         # Embedded base64 app logo for local About card
+│   ├── capabilities/             # Tauri permission capabilities (remote.json, downloader.json)
+│   └── tauri.conf.json           # App bundle configuration
+├── docs/assets/                  # Documentation showcase screenshots
+│   ├── IG-Now hero.png           # App showcase banner
+│   ├── IG-Now features.png       # Media controls & player overlay showcase
+│   ├── IG-Now tray.png           # System tray menu and shortcuts showcase
+│   └── IG-Now downloader.png     # Downloader UI & sidebar Back/Forward showcase
+├── releases/                     # Release staging & version index
+│   ├── versions.json             # Machine-readable version catalog
+│   └── versions/vX.Y.Z/          # Version manifests
+├── .github/                      # GitHub workflows and PR templates
+│   ├── workflows/release.yml     # Universal cross-platform build pipeline
+│   └── PULL_REQUEST_TEMPLATE.md  # Contributor PR submission template
+├── LICENSE                       # IG-Now source and contribution license
 └── README.md, RELEASE_NOTES.md, CHANGELOG.md, SECURITY.md
 ```
 
@@ -80,19 +85,20 @@ IG-Now/
 Follow these steps locally to verify your changes before submitting:
 
 ```bash
-# 1. Validate JavaScript syntax
+# 1. Install JS dependencies, run unit tests & check syntax
+npm ci
+npm test
 node --check frontend/instagram-tools.js
+node --check frontend/direct-messages.js
+node --check frontend/downloader.js
 
-# 2. Check Rust code formatting and compilation
-cd src-tauri
-cargo fmt --all -- --check
-cargo check
+# 2. Check Rust formatting, compilation & unit tests
+cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+cargo check --manifest-path src-tauri/Cargo.toml
+cargo test --manifest-path src-tauri/Cargo.toml --locked --lib
 
-# 3. Run Rust unit tests (locks tray structure, About contract, logo identity)
-cargo test --lib
-
-# 4. Build local release binary
-cargo build --release
+# 3. Build local installer / release bundle
+npx tauri build
 ```
 
 ---

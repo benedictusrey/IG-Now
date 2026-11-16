@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g. v2.2.0)'
+        description: 'Release tag (e.g. v2.5.0)'
         required: true
-        default: 'v2.2.0'
+        default: 'v2.5.0'
 
 concurrency:
   group: release-${{ inputs.tag || github.ref_name }}
@@ -61,6 +61,7 @@ jobs:
           npm test
           node --check frontend/instagram-tools.js
           node --check frontend/direct-messages.js
+          node --check frontend/downloader.js
           cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
           cargo test --manifest-path src-tauri/Cargo.toml --locked --lib
       - name: Put Homebrew sbin on PATH
@@ -73,7 +74,7 @@ jobs:
         with:
           tagName: ${{ inputs.tag || github.ref_name }}
           releaseName: 'IG-Now ${{ inputs.tag || github.ref_name }}'
-          releaseBody: 'Desktop message notifications, a single outer DM scroll surface, and restored automated-message link buttons. See RELEASE_NOTES.md for usage and verification details.'
+          releaseBody: 'Built-in native Downloader workbench (.mp4 H.264+AAC, Audio Only .m4a, up to 20-slide carousels & captions), sidebar Downloader/Forward/Back navigation with Esc pre-click return, Windows Core Audio grouped IG-Now session + mute icon sync, and centered 1588x1025 layout preserving original Instagram comments. See RELEASE_NOTES.md for usage and checksum details.'
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}

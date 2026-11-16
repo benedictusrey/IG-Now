@@ -1,13 +1,31 @@
 {
   "product": "IG-Now",
   "repository": "https://github.com/benedictusrey/IG-Now",
-  "latest": "2.2.0",
+  "latest": "2.5.0",
   "versions": [
+    {
+      "version": "2.5.0",
+      "tag": "v2.5.0",
+      "date": "2026-11-17",
+      "status": "current",
+      "releaseUrl": "https://github.com/benedictusrey/IG-Now/releases/tag/v2.5.0",
+      "highlights": [
+        "Standalone centered 765 x 885 native Downloader workbench with auto-inspect, H.264+AAC .mp4, Audio Only .m4a, up-to-20-slide carousels, collaboration posts, and caption.txt saving (username-YYYYMMDD-hash naming)",
+        "Sidebar Downloader, Forward, and Back buttons above More with Esc pre-click return, duplicate-URL history tracking, and Alt+Left / Alt+Right shortcuts",
+        "1588 x 1025 centered default desktop window preserving Instagram's original native Comments panel with zero icon collisions",
+        "Windows Core Audio grouped IG-Now session visible in Windows Settings Volume mixer with foreground unmute guard and two-icon mute/unmute synchronization"
+      ],
+      "documents": {
+        "releaseNotes": "RELEASE_NOTES.md",
+        "changelog": "CHANGELOG.md"
+      },
+      "localBinaries": "releases/versions/v2.5.0/binaries/"
+    },
     {
       "version": "2.2.0",
       "tag": "v2.2.0",
       "date": "2026-10-04",
-      "status": "current",
+      "status": "published",
       "releaseUrl": "https://github.com/benedictusrey/IG-Now/releases/tag/v2.2.0",
       "highlights": [
         "Native message notifications",
