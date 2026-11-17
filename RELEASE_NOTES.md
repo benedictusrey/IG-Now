@@ -43,4 +43,4 @@
 - `cargo fmt --check` passed; `cargo test --locked --lib`: **42 / 42 passed** (20-item mixed carousels, fallback retries, collaboration posts, header validation, non-Windows GUI FFmpeg candidate paths, stdin `curl --config -` auth header escaping, FFmpeg MP4 muxing / M4A extraction, Core Audio STA COM, multi-monitor centering).
 - Headless Chrome geometry verification (`765×885`, `765×794`, `580×620` — zero outer scroll, balanced columns, zero clipped buttons), `impeccable detect --json` (`[]`), and compiled Windows x64 `npx tauri build` installers verified.
 
-Crafted with care by [@benedictusrey](https://github.com/benedictusrey). Special thanks to [@SohaybKu](https://github.com/SohaybKu) for requesting the native video downloader and Back navigation in [issue #5](https://github.com/benedictusrey/IG-Now/issues/5).
+Crafted with care by [@benedictusrey](https://github.com/benedictusrey). Special thanks to @SohaybKu for requesting the native video downloader and Back navigation in [issue #5](https://github.com/benedictusrey/IG-Now/issues/5).
