@@ -19,7 +19,7 @@ function setRect(el, rect) {
   });
 }
 
-function createFixture(urlPath = "/reels/C9xTestReel/", { showComments = false, overflowHidden = false } = {}) {
+function createFixture(urlPath = "/reels/C9xTestReel/", { showComments = false, overflowHidden = false, beforeEval = null } = {}) {
   const html = `
     <!DOCTYPE html>
     <html>
@@ -147,6 +147,7 @@ function createFixture(urlPath = "/reels/C9xTestReel/", { showComments = false, 
     return: null
   };
 
+  if (typeof beforeEval === "function") beforeEval(win);
   win.eval(source);
   return { dom, win, calls, openedUrls, video, stage, popup };
 }
@@ -1104,6 +1105,85 @@ test("extractFromReactFiber skips cross-origin Window proxies without throwing S
     assert.equal(dlCalls.length, 2, "must download both carousel slides cleanly");
     const toastText = doc.querySelector(".ignow-toast")?.textContent || "";
     assert(!/SecurityError|Blocked a frame|video_versions/i.test(toastText), `unexpected toast error: ${toastText}`);
+  } finally {
+    f.dom.window.close();
+  }
+});
+
+test("scroll scans reuse mounted sidebar row without full-document link queries, lazily serialize GraphQL cache, and avoid backdrop-filter on feed cards", async () => {
+  const opened = [];
+  const f = createFixture("/", {
+    beforeEval: win => {
+      win.fetch = async url => ({
+        ok: true,
+        url: String(url),
+        headers: { get: () => "application/json" },
+        clone() {
+          return {
+            text: async () => JSON.stringify({
+              data: {
+                shortcode_media: {
+                  code: "DLazyCache1",
+                  pk: "55112233",
+                  user: { username: "lazy_user" },
+                  caption: { text: "Cached from network" },
+                  image_versions2: {
+                    candidates: [{ url: "https://cdn.instagram.com/v/lazy1.jpg", width: 1080, height: 1350 }]
+                  }
+                }
+              }
+            })
+          };
+        }
+      });
+    }
+  });
+  f.win.__TAURI__ = {
+    core: {
+      invoke: async (cmd, args) => {
+        opened.push({ cmd, args });
+        return true;
+      }
+    }
+  };
+  try {
+    const doc = f.win.document;
+    // Scroll scans must not re-query every anchor/button across the page once mounted.
+    const moreRow = doc.querySelector(".more-row [role='button']");
+    let moreRectReads = 0;
+    const origRect = moreRow.getBoundingClientRect;
+    moreRow.getBoundingClientRect = () => {
+      moreRectReads += 1;
+      return origRect();
+    };
+    f.win.dispatchEvent(new f.win.Event("scroll"));
+    // Scroll handler must debounce (~120ms), not coerce the Event object to 0ms.
+    let videoScansAt25ms = 0;
+    const origQueryAll = doc.querySelectorAll.bind(doc);
+    doc.querySelectorAll = sel => {
+      if (sel === "video") videoScansAt25ms += 1;
+      return origQueryAll(sel);
+    };
+    await new Promise(r => setTimeout(r, 25));
+    assert.equal(videoScansAt25ms, 0, "scroll scan must stay debounced past 25ms");
+    doc.querySelectorAll = origQueryAll;
+    await new Promise(r => setTimeout(r, 150));
+    f.win.dispatchEvent(new f.win.Event("scroll"));
+    await new Promise(r => setTimeout(r, 170));
+    assert.equal(moreRectReads, 0, "scroll scan must fast-path mounted sidebar buttons without re-scanning More");
+
+    // Feed image download button must not apply backdrop-filter blur during scroll.
+    const styleText = Array.from(doc.querySelectorAll("style")).map(el => el.textContent).join("\n");
+    const imgBtnRule = styleText.match(/\.ignow-image-download-btn\s*\{[^}]*\}/)?.[0] || "";
+    assert.equal(/backdrop-filter\s*:/i.test(imgBtnRule), false, "feed image button must avoid backdrop-filter blur");
+
+    // Network observer caches media metadata and materializes rawNodeJson on Downloader open.
+    await f.win.fetch("https://www.instagram.com/api/graphql");
+    await new Promise(r => setTimeout(r, 30));
+    await f.win.__ignowTools.openNativeDownloader("https://www.instagram.com/p/DLazyCache1/", null);
+    const dlCall = opened.find(c => c.cmd === "open_downloader_window");
+    assert(dlCall, "openNativeDownloader must invoke open_downloader_window");
+    assert.equal(JSON.parse(dlCall.args.payloadJson).code, "DLazyCache1");
   } finally {
     f.dom.window.close();
   }

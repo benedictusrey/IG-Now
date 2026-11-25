@@ -187,8 +187,9 @@
     observer = new root.MutationObserver(records => {
       if (records.some(record => !record.target.parentElement?.closest(".ignow-video-controls, .ignow-dmlinks") &&
         (isDirect() || record.target.closest?.('a[href*="/direct/inbox"]') ||
-          Array.from(record.addedNodes).some(node => node.nodeType === 1 &&
-            (node.matches('a[href*="/direct/inbox"]') || node.querySelector('a[href*="/direct/inbox"]')))))) schedule();
+          (record.type === "childList" && record.addedNodes.length > 0 &&
+            Array.from(record.addedNodes).some(node => node.nodeType === 1 &&
+              (node.matches('a[href*="/direct/inbox"]') || node.querySelector('a[href*="/direct/inbox"]'))))))) schedule();
     });
     root.addEventListener("popstate", schedule);
     for (const method of ["pushState", "replaceState"]) {

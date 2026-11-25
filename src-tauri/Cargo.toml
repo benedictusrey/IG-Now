@@ -1,6 +1,6 @@
 [package]
 name = "ig-now"
-version = "2.5.0"
+version = "2.5.1"
 description = "IG-Now Desktop Client"
 authors = []
 edition = "2021"

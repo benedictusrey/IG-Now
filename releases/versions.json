@@ -1,13 +1,30 @@
 {
   "product": "IG-Now",
   "repository": "https://github.com/benedictusrey/IG-Now",
-  "latest": "2.5.0",
+  "latest": "2.5.1",
   "versions": [
+    {
+      "version": "2.5.1",
+      "tag": "v2.5.1",
+      "date": "2026-11-25",
+      "status": "current",
+      "releaseUrl": "https://github.com/benedictusrey/IG-Now/releases/tag/v2.5.1",
+      "highlights": [
+        "Linux Wayland/WebKitGTK DMA-BUF freeze fix (issue #6) in main.rs with explicit env override support",
+        "Wayland window visibility, positioning, and non-blocking minimized-state watchdog fixes in lib.rs and notifications.rs",
+        "Zero-thrash DOM/sidebar scroll scanning, single-pass lazy GraphQL caching, and compositor blur relief across frontend scripts"
+      ],
+      "documents": {
+        "releaseNotes": "RELEASE_NOTES.md",
+        "changelog": "CHANGELOG.md"
+      },
+      "localBinaries": "releases/versions/v2.5.1/binaries/"
+    },
     {
       "version": "2.5.0",
       "tag": "v2.5.0",
       "date": "2026-11-17",
-      "status": "current",
+      "status": "published",
       "releaseUrl": "https://github.com/benedictusrey/IG-Now/releases/tag/v2.5.0",
       "highlights": [
         "Standalone centered 765 x 885 native Downloader workbench with auto-inspect, H.264+AAC .mp4, Audio Only .m4a, up-to-20-slide carousels, collaboration posts, and caption.txt saving (username-YYYYMMDD-hash naming)",

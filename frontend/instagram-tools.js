@@ -574,10 +574,8 @@
       margin: 0 !important;
       border: 1px solid rgba(255, 255, 255, 0.2) !important;
       border-radius: 999px !important;
-      background: rgba(16, 18, 23, 0.78) !important;
+      background: rgba(16, 18, 23, 0.88) !important;
       color: #f4f5f7 !important;
-      backdrop-filter: blur(8px) !important;
-      -webkit-backdrop-filter: blur(8px) !important;
       box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4) !important;
       cursor: pointer !important;
       pointer-events: auto !important;
@@ -1003,22 +1001,23 @@
 
   function isPostImage(image) {
     if (!(image instanceof HTMLImageElement)) return false;
+    if (image.closest("header, nav, aside, .ignow-media-viewer, #__ignow_about")) return false;
+    if (image.naturalWidth > 0 && (image.naturalWidth < 120 || image.naturalHeight < 120)) return false;
     const rect = image.getBoundingClientRect();
     const hasPostContext = Boolean(image.closest("article, [role=dialog]"));
     return (hasPostContext || (rect.width >= 260 && rect.height >= 260))
       && rect.width >= 120
-      && rect.height >= 120
-      && !image.closest("header, nav, aside");
+      && rect.height >= 120;
   }
 
   function isPostVideo(video) {
     if (!(video instanceof HTMLVideoElement)) return false;
+    if (video.closest("header, nav, aside, .ignow-media-viewer, #__ignow_about")) return false;
     const rect = video.getBoundingClientRect();
     const hasPostContext = Boolean(video.closest("article, [role=dialog]"));
     return (hasPostContext || (rect.width >= 260 && rect.height >= 260))
       && rect.width >= 120
-      && rect.height >= 120
-      && !video.closest("header, nav, aside");
+      && rect.height >= 120;
   }
 
   function mediaFromTarget(target) {
@@ -1752,8 +1751,16 @@
     const takenAt = Number.isFinite(takenEpoch) && takenEpoch > 0
       ? new Date(takenEpoch * 1000).toISOString()
       : "";
-    const rawNodeJson = serializeRawMediaNode(node);
-    return { items, caption, username, shortcode, pk, takenAt, rawNodeJson };
+    let cachedRawNodeJson = null;
+    const bundle = { items, caption, username, shortcode, pk, takenAt };
+    Object.defineProperty(bundle, "rawNodeJson", {
+      enumerable: true,
+      get() {
+        if (cachedRawNodeJson === null) cachedRawNodeJson = serializeRawMediaNode(node);
+        return cachedRawNodeJson;
+      }
+    });
+    return bundle;
   }
 
   function isSafeDataObject(value) {
@@ -1795,11 +1802,11 @@
     };
     if (bundle.shortcode && shouldReplace(bundle.shortcode)) {
       state.mediaCache.set(bundle.shortcode, bundle);
-      if (bundle.rawNodeJson) state.rawNodeCache.set(bundle.shortcode, bundle.rawNodeJson);
+      state.rawNodeCache.set(bundle.shortcode, bundle);
     }
     if (bundle.pk && shouldReplace(`pk:${bundle.pk}`)) {
       state.mediaCache.set(`pk:${bundle.pk}`, bundle);
-      if (bundle.rawNodeJson) state.rawNodeCache.set(`pk:${bundle.pk}`, bundle.rawNodeJson);
+      state.rawNodeCache.set(`pk:${bundle.pk}`, bundle);
     }
     while (state.mediaCache.size > 160) {
       state.mediaCache.delete(state.mediaCache.keys().next().value);
@@ -1951,7 +1958,7 @@
     return fallbackBundle;
   }
 
-  function extractBundlesFromJsonText(text, targetShortcode) {
+  function extractBundlesFromJsonText(text, targetShortcode, cacheOnly = false) {
     if (typeof text !== "string" || !text.trim() || text.length > 4 * 1024 * 1024) return null;
     const cleaned = text.replace(/^\s*for\s*\(;;\);/, "");
     for (const line of cleaned.split("\n")) {
@@ -1960,6 +1967,7 @@
       try {
         const parsed = JSON.parse(trimmed);
         cacheBundlesFromPayload(parsed);
+        if (cacheOnly) continue;
         if (targetShortcode && state.mediaCache.has(targetShortcode)) {
           return state.mediaCache.get(targetShortcode);
         }
@@ -2753,7 +2761,8 @@
   function rawNodePayloadForTarget(initialUrl, targetMedia) {
     const code = shortcodeFromPostUrl(initialUrl);
     if (code && state.rawNodeCache.has(code)) {
-      return state.rawNodeCache.get(code);
+      const cached = state.rawNodeCache.get(code);
+      return typeof cached === "string" ? cached : (cached?.rawNodeJson || "");
     }
     if (targetMedia) {
       const bundle = extractFromReactFiber(targetMedia, code);
@@ -2819,7 +2828,8 @@
     let payloadJson = "";
     const code = shortcodeFromPostUrl(targetUrl);
     if (code && state.rawNodeCache.has(code)) {
-      payloadJson = state.rawNodeCache.get(code);
+      const cached = state.rawNodeCache.get(code);
+      payloadJson = typeof cached === "string" ? cached : (cached?.rawNodeJson || "");
     }
     if (!payloadJson && typeof fetch === "function") {
       const headers = instagramApiHeaders();
@@ -3020,7 +3030,7 @@
 
   window.addEventListener("resize", () => {
     if (state.viewer && Math.abs(state.viewer.scale - state.viewer.fitScale) < 0.02) fitViewer();
-    installSidebarBackButton();
+    installSidebarBackButton(true);
   });
 
   function showViewer(image) {
@@ -3186,7 +3196,7 @@
   function findSidebarMoreRow() {
     const candidates = Array.from(document.querySelectorAll("a, button, [role='button'], [role='link']"))
       .filter(el => {
-        if (el.closest(".ignow-sidebar-back, .ignow-sidebar-forward, .ignow-sidebar-downloader, .ignow-video-controls")) return false;
+        if (el.closest("main, article, [role='dialog'], .ignow-sidebar-back, .ignow-sidebar-forward, .ignow-sidebar-downloader, .ignow-video-controls")) return false;
         const rect = el.getBoundingClientRect();
         if (rect.width === 0 && rect.height === 0) {
           return Boolean(el.closest("nav, [role='navigation'], [data-ignow-sidebar]"));
@@ -3371,12 +3381,31 @@
     backBtn.classList.toggle("ignow-sidebar-back--compact", compact);
   }
 
-  function installSidebarBackButton() {
+  let mountedMoreInfo = null;
+
+  function installSidebarBackButton(forceMeasure = true) {
+    if (!forceMeasure
+      && mountedMoreInfo
+      && mountedMoreInfo.row.isConnected
+      && mountedMoreInfo.control.isConnected) {
+      const backBtn = document.querySelector(".ignow-sidebar-back");
+      const fwdBtn = document.querySelector(".ignow-sidebar-forward");
+      const dlBtn = document.querySelector(".ignow-sidebar-downloader");
+      if (backBtn && fwdBtn && dlBtn
+        && backBtn.nextElementSibling === mountedMoreInfo.row
+        && fwdBtn.nextElementSibling === backBtn
+        && dlBtn.nextElementSibling === fwdBtn) {
+        updateSidebarBackButtonState();
+        return backBtn;
+      }
+    }
+
     const moreInfo = findSidebarMoreRow();
     const sidebar = findSidebarContainer();
     const { dlBtn, fwdBtn, backBtn } = createSidebarButtons();
 
     if (moreInfo && moreInfo.row.parentElement) {
+      mountedMoreInfo = moreInfo;
       document.querySelector(".ignow-sidebar-floating-nav")?.remove();
       const container = moreInfo.row.parentElement;
       if (backBtn.nextElementSibling !== moreInfo.row) {
@@ -3605,7 +3634,6 @@
         if (state.videoAudioUnlocked) activateVideoAudio(video);
         pauseOtherVideos(video);
       }
-      videoControllers.get(video)?.refresh?.();
       return;
     }
     const host = video.parentElement;
@@ -3762,6 +3790,11 @@
 
     // The aria-label is already set once at construction above — sync never
     // rewrites constant attributes (v2.1.0 perf fix).
+    let lastProgressStr = "";
+    let lastProgressInt = "";
+    let lastElapsedText = "";
+    let lastTotalText = "";
+    let lastPausedState = null;
     const sync = () => {
       // The seek line's aria-label is CONSTANT — set it once (below), not on
       // every timeupdate (~4×/s per video): sync must not write attributes
@@ -3771,14 +3804,35 @@
       const progress = duration > 0
         ? Math.max(0, Math.min(1, video.currentTime / duration))
         : 0;
-      progressLine.value = String(progress * 100);
-      progressLine.style.setProperty("--ignow-progress", `${progress * 100}%`);
-      progressLine.setAttribute("aria-valuenow", String(Math.round(progress * 100)));
-      elapsedLabel.textContent = formatVideoTime(video.currentTime);
-      totalLabel.textContent = formatVideoTime(duration);
-      playButton.textContent = video.paused ? "\u25B6" : "\u23F8";
-      playButton.title = video.paused ? "Play video" : "Pause video";
-      playButton.setAttribute("aria-label", playButton.title);
+      const pct = progress * 100;
+      const pctStr = `${pct}%`;
+      const pctInt = String(Math.round(pct));
+      if (pctStr !== lastProgressStr) {
+        lastProgressStr = pctStr;
+        progressLine.value = String(pct);
+        progressLine.style.setProperty("--ignow-progress", pctStr);
+      }
+      if (pctInt !== lastProgressInt) {
+        lastProgressInt = pctInt;
+        progressLine.setAttribute("aria-valuenow", pctInt);
+      }
+      const elapsedText = formatVideoTime(video.currentTime);
+      if (elapsedText !== lastElapsedText) {
+        lastElapsedText = elapsedText;
+        elapsedLabel.textContent = elapsedText;
+      }
+      const totalText = formatVideoTime(duration);
+      if (totalText !== lastTotalText) {
+        lastTotalText = totalText;
+        totalLabel.textContent = totalText;
+      }
+      const isPaused = Boolean(video.paused);
+      if (isPaused !== lastPausedState) {
+        lastPausedState = isPaused;
+        playButton.textContent = isPaused ? "\u25B6" : "\u23F8";
+        playButton.title = isPaused ? "Play video" : "Pause video";
+        playButton.setAttribute("aria-label", playButton.title);
+      }
       syncVolume();
     };
 
@@ -3825,10 +3879,13 @@
     // The icon reflects the AUDIBLE level (muted counts as off), matching
     // how Instagram's own icon reacts to its native slider.
     let lastVolSignature = "";
+    let lastSliderPct = -1;
     const volumeSliderSync = () => {
       const isSilenced = Boolean(video.muted || !Number.isFinite(video.volume) || video.volume <= 0.005);
       const level = isSilenced ? 0 : video.volume;
       const pct = Math.round(Math.max(0, Math.min(1, level)) * 100);
+      if (pct === lastSliderPct) return;
+      lastSliderPct = pct;
       volumeSlider.value = String(pct);
       volumeSlider.setAttribute("aria-valuenow", String(pct));
       volumeSlider.setAttribute("aria-valuetext", `${pct}%`);
@@ -4084,8 +4141,8 @@
     return stage;
   }
 
-  function hasBottomRightNativeButton(stage) {
-    const sr = stage.getBoundingClientRect();
+  function hasBottomRightNativeButton(stage, stageRect = stage.getBoundingClientRect()) {
+    const sr = stageRect;
     if (sr.width <= 0 || sr.height <= 0) return false;
     return Array.from(stage.querySelectorAll("button, [role='button']")).some(el => {
       if (el.closest(".ignow-image-download-btn, .ignow-video-controls")) return false;
@@ -4094,18 +4151,21 @@
     });
   }
 
-  function activeStageImage(stage, fallbackImage) {
-    const sr = stage.getBoundingClientRect();
+  function activeStageImage(stage, fallbackImage, stageRect = stage.getBoundingClientRect()) {
+    const sr = stageRect;
     const imgs = Array.from(stage.querySelectorAll("img")).filter(isPostImage);
     const inViewport = imgs.find(img => elementInStageViewport(img, sr));
     return inViewport || fallbackImage || imgs[0] || null;
   }
 
   function installNativeImageControls(image) {
+    if (!(image instanceof HTMLImageElement)) return;
+    if (image.closest("header, nav, aside, .ignow-video-controls, .ignow-media-viewer, #__ignow_about")) return;
     const stage = findImageStageHost(image);
     if (!stage) return;
-    if (!elementInStageViewport(image, stage.getBoundingClientRect())) return;
-    if (getComputedStyle(stage).position === "static") {
+    const stageRect = stage.getBoundingClientRect();
+    if (!elementInStageViewport(image, stageRect)) return;
+    if (!stage.classList.contains("ignow-image-host") && getComputedStyle(stage).position === "static") {
       stage.classList.add("ignow-image-host");
     }
 
@@ -4126,7 +4186,7 @@
       stage.appendChild(btn);
     }
 
-    btn.classList.toggle("ignow-image-download-btn--lifted", hasBottomRightNativeButton(stage));
+    btn.classList.toggle("ignow-image-download-btn--lifted", hasBottomRightNativeButton(stage, stageRect));
     controlActions.set(btn, () => {
       const targetImg = activeStageImage(stage, image);
       const postUrl = postUrlForMedia(targetImg) || normalizeInstagramPostUrl(window.location.href) || "";
@@ -4141,7 +4201,7 @@
       if (!stage || activeStageVideo(stage) || !activeStageImage(stage, null)) btn.remove();
     });
     document.querySelectorAll("img").forEach(installNativeImageControls);
-    installSidebarBackButton();
+    installSidebarBackButton(false);
   }
 
   function installNetworkMediaObserver() {
@@ -4152,8 +4212,10 @@
         Promise.resolve(pending).then(response => {
           const url = String(response?.url || "");
           if (!/\/(?:api\/v1\/|api\/graphql|graphql)/i.test(url)) return;
+          const contentType = String(response.headers?.get?.("content-type") || "");
+          if (contentType && !/json|text|javascript/i.test(contentType)) return;
           if (Number(response.headers?.get?.("content-length")) > 4 * 1024 * 1024) return;
-          response.clone?.().text?.().then(text => extractBundlesFromJsonText(text, "")).catch(() => {});
+          response.clone?.().text?.().then(text => extractBundlesFromJsonText(text, "", true)).catch(() => {});
         }).catch(() => {});
         return pending;
       };
@@ -4167,8 +4229,11 @@
             const reqUrl = String(xhrUrls.get(this) || "");
             if (!/\/(?:api\/v1\/|api\/graphql|graphql)/i.test(reqUrl)) return;
             try {
-              const text = this.responseType === "json" ? JSON.stringify(this.response) : this.responseText;
-              extractBundlesFromJsonText(text, "");
+              if (this.responseType === "json") {
+                if (this.response && typeof this.response === "object") cacheBundlesFromPayload(this.response);
+              } else {
+                extractBundlesFromJsonText(this.responseText, "", true);
+              }
             } catch {
               // Ignore non-JSON responses.
             }
@@ -4214,16 +4279,18 @@
     scanVideos();
 
     let scanTimer = null;
-    const scheduleScan = () => {
+    const scheduleScan = (delay = 120) => {
       if (scanTimer !== null) return;
+      const ms = typeof delay === "number" && delay >= 0 ? delay : 120;
       scanTimer = window.setTimeout(() => {
         scanTimer = null;
         scanVideos();
-      }, 120);
+      }, ms);
     };
     let lastRoute = window.location.href;
     installHistoryHooks(route => {
       if (route) lastRoute = route;
+      mountedMoreInfo = null;
       scheduleScan();
     });
 
@@ -4249,14 +4316,16 @@
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ["class", "style", "hidden", "aria-hidden"]
+      attributeFilter: ["hidden", "aria-hidden"]
     });
-    window.addEventListener("scroll", scheduleScan, { capture: true, passive: true });
-    document.addEventListener("transitionend", scheduleScan, { capture: true, passive: true });
+    window.addEventListener("scroll", () => scheduleScan(120), { capture: true, passive: true });
+    document.addEventListener("transitionend", event => {
+      if (!isOwnNode(event.target)) scheduleScan();
+    }, { capture: true, passive: true });
     document.addEventListener("click", event => {
       const navBtn = elementFromTarget(event.target)?.closest?.("[aria-label*='Next' i], [aria-label*='Go Back' i], [aria-label*='Previous' i]");
       if (navBtn && !navBtn.closest(".ignow-video-controls, .ignow-sidebar-back, .ignow-sidebar-forward")) {
-        window.setTimeout(scheduleScan, 160);
+        scheduleScan(160);
       }
     }, true);
     document.addEventListener("load", event => {
@@ -4266,6 +4335,7 @@
       const currentRoute = window.location.href;
       if (currentRoute === lastRoute) return;
       lastRoute = currentRoute;
+      mountedMoreInfo = null;
       recordNavUrl(currentRoute, false);
       scheduleScan();
     }, 500);
