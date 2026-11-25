@@ -54,7 +54,7 @@ pub fn report_dm_unread(
     let focused_inbox = viewing_inbox
         && app.get_webview_window("instagram").is_some_and(|window| {
             window.is_visible().unwrap_or(false)
-                && !window.is_minimized().unwrap_or(true)
+                && !window.is_minimized().unwrap_or(false)
                 && window.is_focused().unwrap_or(false)
         });
     let suppress = focused_inbox || now.duration_since(state.started) < Duration::from_secs(10);

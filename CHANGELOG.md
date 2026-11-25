@@ -4,6 +4,19 @@ All notable changes to **IG-Now** are documented here. The format follows [Keep 
 
 ---
 
+## [2.5.1] — 2026-11-25
+
+### Fixed
+- **Linux Wayland / WebKitGTK Freeze on Launch & Video Playback ([issue #6](https://github.com/benedictusrey/IG-Now/issues/6)):** Default `WEBKIT_DISABLE_DMABUF_RENDERER=1` on Linux (`src-tauri/src/main.rs`) when unset by the user, preventing WebKitGTK DMA-BUF compositor hangs on Arch Linux, GNOME Wayland, AMD Vega iGPUs, and NVIDIA setups while preserving explicit environment overrides.
+- **Wayland Window Lifecycle & Visibility Guards (`src-tauri/src/lib.rs`, `src-tauri/src/notifications.rs`):** Show Linux windows paint-ready at creation (unless `--minimized`) to avoid Wayland `.visible(false)` -> `.show()` surface/decoration freezes; skip unsupported `set_position` calls on Wayland (`is_wayland_session`); stop treating unsupported `is_minimized()` errors (`Err`/`None`) as permanently minimized/hidden in `watch_instagram_window` (`is_window_hidden_state`) and `report_dm_unread`; restrict 800 ms `is_focused()` polling to Windows (preserving `WindowEvent::Focused(true)` on Linux/macOS).
+
+### Changed & Optimized
+- **Zero-Thrash DOM & Sidebar Scanning (`frontend/instagram-tools.js`):** Fast-path `installSidebarBackButton(false)` when sidebar buttons are already mounted before `More` (eliminating repeated whole-document link queries + `getBoundingClientRect()` sweeps on scroll), skip `header`/`nav`/`aside` and small images before layout reads in `isPostImage`/`isPostVideo`/`installNativeImageControls`, drop noisy `style`/`class` attribute observation from `MutationObserver` (keeping `childList` + `hidden`/`aria-hidden`), avoid full `sync()` work on already-mounted videos during `scanVideos()`, cache unchanged video control DOM writes in `sync()`, and run carousel nav rescans in a single `scheduleScan(160)` timer.
+- **Single-Pass Network Caching & Lazy Serialization (`frontend/instagram-tools.js`, `frontend/direct-messages.js`):** Removed the duplicate 6,000-node object traversal in `installNetworkMediaObserver()` (`cacheOnly` mode), added content-type prefiltering, made `bundle.rawNodeJson` lazy so scrolling feed/Reel GraphQL responses incur zero eager `JSON.stringify` allocations until Downloader opens, and guarded `direct-messages.js` `MutationObserver` against non-`childList` array allocations.
+- **Compositor Paint Relief (`frontend/instagram-tools.js`):** Replaced per-card `backdrop-filter: blur(8px)` on `.ignow-image-download-btn` with an opaque-alpha dark pill (`rgba(16, 18, 23, 0.88)`) so feed scrolling avoids per-frame offscreen blur passes.
+
+---
+
 ## [2.5.0] — 2026-11-17
 
 ### Added

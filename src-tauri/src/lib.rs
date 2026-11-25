@@ -83,6 +83,14 @@ fn compute_centered_work_area_frame(
     }
 }
 
+fn is_window_hidden_state(minimized: Option<bool>, visible: Option<bool>) -> bool {
+    minimized.unwrap_or(false) || !visible.unwrap_or(false)
+}
+
+fn is_wayland_session() -> bool {
+    cfg!(target_os = "linux") && std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty())
+}
+
 /// Clamp the window to the target monitor's WORK AREA (excludes the taskbar and
 /// any top system bar) and center it there. Uses live `outer_size` when no
 /// resize was issued, and `frame.outer_x`/`outer_y` after resizing so Win32
@@ -137,6 +145,11 @@ fn fit_window_to_work_area_on_monitor(
             frame.target_width,
             frame.target_height,
         ));
+    }
+
+    // Wayland compositors manage window placement and reject/ignore client positioning.
+    if is_wayland_session() {
+        return;
     }
 
     if !needs_resize {
@@ -281,10 +294,11 @@ fn watch_instagram_window(w: tauri::WebviewWindow) {
     #[cfg(windows)]
     let mut last_endpoints = audio::active_render_endpoint_ids();
 
-    // Fail-safe direction: if a state query errors (e.g. the window was
-    // destroyed), treat the window as HIDDEN so playback gets paused.
-    let state_hidden = || w.is_minimized().unwrap_or(true) || !w.is_visible().unwrap_or(false);
+    // Treat unsupported `is_minimized` queries (e.g. Wayland) as not minimized;
+    // visibility is still checked via `!is_visible()`.
+    let state_hidden = || is_window_hidden_state(w.is_minimized().ok(), w.is_visible().ok());
     let mut last_hidden = state_hidden();
+    #[cfg(windows)]
     let mut last_foreground = !last_hidden && w.is_focused().unwrap_or(false);
     let mut startup_ticks = 0u32;
     let mut startup_reported = false;
@@ -297,11 +311,11 @@ fn watch_instagram_window(w: tauri::WebviewWindow) {
             break;
         }
         let hidden = state_hidden();
-        let in_foreground = !hidden && w.is_focused().unwrap_or(false);
         // While focused in foreground on Windows, refresh sessions on device
         // hotplug and keep IG-Now audio sessions branded and unmuted.
         #[cfg(windows)]
         {
+            let in_foreground = !hidden && w.is_focused().unwrap_or(false);
             let endpoints = audio::active_render_endpoint_ids();
             if endpoints != last_endpoints {
                 _audio_keepalive = audio::register_app_sessions_with_mute(hidden);
@@ -310,6 +324,12 @@ fn watch_instagram_window(w: tauri::WebviewWindow) {
             if in_foreground && audio::ensure_foreground_audio_ready() {
                 eprintln!("[IG-Now] Watchdog: foreground audio session unmuted");
             }
+            if in_foreground && !last_foreground {
+                let _ = w.eval(
+                    "if (window.__ignowEnsureForegroundAudio) window.__ignowEnsureForegroundAudio();",
+                );
+            }
+            last_foreground = in_foreground;
         }
         if hidden && !last_hidden {
             eprintln!("[IG-Now] Watchdog: window hidden -> pausing media");
@@ -318,13 +338,7 @@ fn watch_instagram_window(w: tauri::WebviewWindow) {
             eprintln!("[IG-Now] Watchdog: window visible -> resuming media");
             resume_media_for_visible(&w);
         }
-        if in_foreground && !last_foreground {
-            let _ = w.eval(
-                "if (window.__ignowEnsureForegroundAudio) window.__ignowEnsureForegroundAudio();",
-            );
-        }
         last_hidden = hidden;
-        last_foreground = in_foreground;
         // Cold-start diagnostic: ~20 s after launch, with no hidden/visible
         // transition yet, dump the TRUE fresh-launch page state (muted?
         // volume?) — the E2E evidence that the startup audio defaults hold
@@ -362,6 +376,10 @@ pub fn launch_instagram_internal(app: &AppHandle, start_minimized: bool) -> Resu
         return Ok(());
     }
 
+    // On Linux/Wayland, creating a GTK window hidden and calling `.show()` later
+    // can freeze native decorations/input mapping; show immediately unless `--minimized`.
+    let start_visible_now = !start_minimized && cfg!(target_os = "linux");
+
     let browser_app = app.clone();
     let window = WebviewWindowBuilder::new(
         app,
@@ -374,11 +392,10 @@ pub fn launch_instagram_internal(app: &AppHandle, start_minimized: bool) -> Resu
     .resizable(true)
     .center()
     // Anti-flash: the webview paints Instagram's near-black from the first
-    // frame instead of white, and the window is only shown once the page has
-    // finished loading (on_page_load below) — no white/black blink on launch
-    // or in-app navigation.
+    // frame instead of white, and on Windows/macOS the window is only shown
+    // once the page finishes loading (on_page_load below).
     .background_color(Color(18, 18, 18, 255))
-    .visible(false)
+    .visible(start_visible_now)
     .data_directory(profile_data_dir)
     .initialization_script(DIRECT_MESSAGES_SCRIPT)
     .initialization_script(INSTAGRAM_HELPER_SCRIPT)
@@ -387,9 +404,11 @@ pub fn launch_instagram_internal(app: &AppHandle, start_minimized: bool) -> Resu
             if !INITIAL_GEOMETRY_APPLIED.swap(true, Ordering::Relaxed) {
                 fit_window_to_work_area(&window);
             }
-            let _ = window.show();
-            let _ = window.set_focus();
-            let _ = window.unminimize();
+            if !start_visible_now {
+                let _ = window.show();
+                let _ = window.set_focus();
+                let _ = window.unminimize();
+            }
             #[cfg(windows)]
             let _ = audio::ensure_foreground_audio_ready();
             let _ = window.eval(
@@ -411,7 +430,7 @@ pub fn launch_instagram_internal(app: &AppHandle, start_minimized: bool) -> Resu
     // only once the page has finished loading, killing the launch flash.
     // This fallback guarantees the window still appears if a page never
     // reaches load-finished (offline start, stalled navigation).
-    if !start_minimized {
+    if !start_minimized && !start_visible_now {
         let fallback = window.clone();
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_secs(8));
@@ -523,6 +542,7 @@ pub fn open_downloader_window_internal(
         return Ok(());
     }
 
+    let dl_visible_now = cfg!(target_os = "linux");
     let dl_win = WebviewWindowBuilder::new(
         app,
         DOWNLOADER_WINDOW_LABEL,
@@ -532,7 +552,7 @@ pub fn open_downloader_window_internal(
     .inner_size(DOWNLOADER_WINDOW_WIDTH, DOWNLOADER_WINDOW_HEIGHT)
     .min_inner_size(DOWNLOADER_MIN_WIDTH, DOWNLOADER_MIN_HEIGHT)
     .resizable(true)
-    .visible(false)
+    .visible(dl_visible_now)
     .background_color(Color(17, 19, 24, 255))
     .build()
     .map_err(|error| error.to_string())?;
@@ -544,8 +564,10 @@ pub fn open_downloader_window_internal(
         DOWNLOADER_MIN_WIDTH,
         DOWNLOADER_MIN_HEIGHT,
     );
-    let _ = dl_win.show();
-    let _ = dl_win.set_focus();
+    if !dl_visible_now {
+        let _ = dl_win.show();
+        let _ = dl_win.set_focus();
+    }
 
     Ok(())
 }
@@ -1891,5 +1913,13 @@ mod download_tests {
             fb,
             vec![("https://cdn.instagram.com/v/fallback.mp4".to_string(), None)]
         );
+    }
+
+    #[test]
+    fn unsupported_minimized_query_does_not_force_window_hidden() {
+        assert!(!super::is_window_hidden_state(None, Some(true)));
+        assert!(super::is_window_hidden_state(Some(true), Some(true)));
+        assert!(super::is_window_hidden_state(Some(false), Some(false)));
+        assert!(super::is_window_hidden_state(None, None));
     }
 }
