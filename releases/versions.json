@@ -1,13 +1,30 @@
 {
   "product": "IG-Now",
   "repository": "https://github.com/benedictusrey/IG-Now",
-  "latest": "2.5.1",
+  "latest": "2.5.2",
   "versions": [
+    {
+      "version": "2.5.2",
+      "tag": "v2.5.2",
+      "date": "2026-11-26",
+      "status": "current",
+      "releaseUrl": "https://github.com/benedictusrey/IG-Now/releases/tag/v2.5.2",
+      "highlights": [
+        "Linux WebKitGTK & Wayland/XWayland overhaul (PR #7 / issue #6 follow-up): DRI3 DMA-BUF probing, pre-navigation CacheModel::WebBrowser + smooth scrolling, Skia CPU thread/vblank tuning, and event-driven tray/focus playback resume",
+        "Eliminates off-route/detached video decoder accumulation, lazily mounts Reels controls, defers post-scroll native mute sync, and caches CSSOM blur rule signatures",
+        "Cross-platform Core Audio COM apartment Drop safety, atomic Downloader temp-file replacement, curl protocol pinning, keyboard slider inputs, focus-visible rings, and dark-mode dialog/select polish"
+      ],
+      "documents": {
+        "releaseNotes": "RELEASE_NOTES.md",
+        "changelog": "CHANGELOG.md"
+      },
+      "localBinaries": "releases/versions/v2.5.2/binaries/"
+    },
     {
       "version": "2.5.1",
       "tag": "v2.5.1",
       "date": "2026-11-25",
-      "status": "current",
+      "status": "published",
       "releaseUrl": "https://github.com/benedictusrey/IG-Now/releases/tag/v2.5.1",
       "highlights": [
         "Linux Wayland/WebKitGTK DMA-BUF freeze fix (issue #6) in main.rs with explicit env override support",

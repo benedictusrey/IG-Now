@@ -83,12 +83,239 @@ fn compute_centered_work_area_frame(
     }
 }
 
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 fn is_window_hidden_state(minimized: Option<bool>, visible: Option<bool>) -> bool {
     minimized.unwrap_or(false) || !visible.unwrap_or(false)
 }
 
+fn dmabuf_disable_reason(
+    dmabuf_override: Option<&std::ffi::OsStr>,
+    is_wsl: bool,
+    is_nvidia: bool,
+    has_render_node: bool,
+    using_x11: bool,
+    x11_has_dri3: bool,
+) -> Option<&'static str> {
+    if !cfg!(target_os = "linux") || dmabuf_override.is_some() {
+        return None;
+    }
+    if is_wsl {
+        return Some("wslg");
+    }
+    if is_nvidia {
+        return Some("nvidia");
+    }
+    if !has_render_node {
+        return Some("no-render-node");
+    }
+    if using_x11 && !x11_has_dri3 {
+        return Some("x11-no-dri3");
+    }
+    None
+}
+
+fn should_demote_nvdec_plugins(
+    gst_rank_override: Option<&std::ffi::OsStr>,
+    dmabuf_disabled: bool,
+) -> bool {
+    cfg!(target_os = "linux") && dmabuf_disabled && gst_rank_override.is_none()
+}
+
+fn recommended_skia_cpu_threads(available_cpus: usize) -> usize {
+    if available_cpus < 4 {
+        available_cpus.max(1)
+    } else {
+        (available_cpus / 2).clamp(4, 8)
+    }
+}
+
+fn should_configure_cpu_fallback_tuning(
+    dmabuf_disabled: bool,
+    env_override: Option<&std::ffi::OsStr>,
+) -> bool {
+    cfg!(target_os = "linux") && dmabuf_disabled && env_override.is_none()
+}
+
+fn should_default_x11_backend(
+    gdk_backend: Option<&std::ffi::OsStr>,
+    wayland_display: Option<&std::ffi::OsStr>,
+    x11_display: Option<&std::ffi::OsStr>,
+) -> bool {
+    cfg!(target_os = "linux")
+        && gdk_backend.is_none()
+        && wayland_display.is_some_and(|v| !v.is_empty())
+        && x11_display.is_some_and(|v| !v.is_empty())
+}
+
+#[cfg(target_os = "linux")]
+fn is_wsl_runtime() -> bool {
+    if std::env::var_os("WSL_DISTRO_NAME").is_some_and(|v| !v.is_empty())
+        || std::env::var_os("WSL_INTEROP").is_some_and(|v| !v.is_empty())
+        || std::env::var_os("WSL2_GUI_APPS_ENABLED").is_some_and(|v| !v.is_empty())
+    {
+        return true;
+    }
+    fs::read_to_string("/proc/sys/kernel/osrelease")
+        .map(|s| {
+            let lower = s.to_ascii_lowercase();
+            lower.contains("microsoft") || lower.contains("wsl")
+        })
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "linux")]
+fn has_drm_render_node_in_dir(dir: &Path) -> bool {
+    fs::read_dir(dir)
+        .ok()
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| entry.ok())
+        .any(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .is_some_and(|name| name.starts_with("renderD"))
+        })
+}
+
+#[cfg(target_os = "linux")]
+fn is_nvidia_gpu() -> bool {
+    Path::new("/proc/driver/nvidia/version").exists() || Path::new("/sys/module/nvidia").exists()
+}
+
+#[cfg(target_os = "linux")]
+fn x11_supports_dri3() -> bool {
+    let Ok(xlib) = x11_dl::xlib::Xlib::open() else {
+        return false;
+    };
+    // Safety: XOpenDisplay(null), XQueryExtension, and XCloseDisplay are standard
+    // libX11 queries against a valid non-null Display pointer.
+    unsafe {
+        let display = (xlib.XOpenDisplay)(std::ptr::null());
+        if display.is_null() {
+            return false;
+        }
+        let mut major = 0;
+        let mut event = 0;
+        let mut error = 0;
+        let ok = (xlib.XQueryExtension)(
+            display,
+            c"DRI3".as_ptr(),
+            &mut major,
+            &mut event,
+            &mut error,
+        ) != 0;
+        (xlib.XCloseDisplay)(display);
+        ok
+    }
+}
+
+#[cfg(target_os = "linux")]
+static LINUX_DMABUF_REASON: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+
+/// Apply Linux runtime graphics fallbacks before Tauri/GTK/WebKit initializes:
+/// 1) Route Wayland sessions through XWayland (`GDK_BACKEND=x11`) when `DISPLAY`
+///    is available and user did not set `GDK_BACKEND`, avoiding GNOME Wayland +
+///    AMD black screens/CSD titlebar clipping and cutting UI host CPU ~3-4x.
+/// 2) Disable WebKitGTK zero-copy DMA-BUF on WSLg (D3D12 `pthread_mutex_lock`
+///    crashes), NVIDIA drivers, missing `/dev/dri/renderD128`, or DRI3-less
+///    X11/XWayland; allow native DMA-BUF on bare-metal Mesa/DRI3 GPUs unless
+///    the user explicitly sets `WEBKIT_DISABLE_DMABUF_RENDERER`.
+/// 3) When DMA-BUF is disabled (CPU/SHM transport), demote NVDEC CUDA decoders
+///    below software `avdec_h264` so each preloaded Reel does not allocate a
+///    ~200 MB CUDA driver context only to read frames back to CPU RAM, and
+///    disable invisible video playback unless overridden.
+pub fn configure_linux_runtime_env() {
+    if should_default_x11_backend(
+        std::env::var_os("GDK_BACKEND").as_deref(),
+        std::env::var_os("WAYLAND_DISPLAY").as_deref(),
+        std::env::var_os("DISPLAY").as_deref(),
+    ) {
+        std::env::set_var("GDK_BACKEND", "x11");
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let dmabuf_override = std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER");
+        let reason = if dmabuf_override.is_some() {
+            "user-override"
+        } else {
+            let is_wsl = is_wsl_runtime();
+            let is_nvidia = is_nvidia_gpu();
+            let has_render_node = has_drm_render_node_in_dir(Path::new("/dev/dri"));
+            let using_x11 = !is_wayland_session();
+            let x11_has_dri3 = if using_x11 && !is_wsl && !is_nvidia && has_render_node {
+                x11_supports_dri3()
+            } else {
+                false
+            };
+            if let Some(disable_reason) = dmabuf_disable_reason(
+                dmabuf_override.as_deref(),
+                is_wsl,
+                is_nvidia,
+                has_render_node,
+                using_x11,
+                x11_has_dri3,
+            ) {
+                std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+                disable_reason
+            } else {
+                "enabled"
+            }
+        };
+        let _ = LINUX_DMABUF_REASON.set(reason);
+    }
+
+    let dmabuf_disabled = std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER")
+        .is_some_and(|v| v == std::ffi::OsStr::new("1"));
+    if should_demote_nvdec_plugins(
+        std::env::var_os("GST_PLUGIN_FEATURE_RANK").as_deref(),
+        dmabuf_disabled,
+    ) {
+        std::env::set_var(
+            "GST_PLUGIN_FEATURE_RANK",
+            "nvh264dec:NONE,nvh265dec:NONE,nvvp8dec:NONE,nvvp9dec:NONE,nvav1dec:NONE",
+        );
+    }
+    if should_configure_cpu_fallback_tuning(
+        dmabuf_disabled,
+        std::env::var_os("WEBKIT_SKIA_CPU_PAINTING_THREADS").as_deref(),
+    ) {
+        let cpus = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
+        std::env::set_var(
+            "WEBKIT_SKIA_CPU_PAINTING_THREADS",
+            recommended_skia_cpu_threads(cpus).to_string(),
+        );
+    }
+    if should_configure_cpu_fallback_tuning(
+        dmabuf_disabled,
+        std::env::var_os("WEBKIT_FORCE_VBLANK_TIMER").as_deref(),
+    ) {
+        std::env::set_var("WEBKIT_FORCE_VBLANK_TIMER", "1");
+    }
+    if std::env::var_os("WEBKIT_GST_ALLOW_PLAYBACK_OF_INVISIBLE_VIDEOS").is_none() {
+        std::env::set_var("WEBKIT_GST_ALLOW_PLAYBACK_OF_INVISIBLE_VIDEOS", "0");
+    }
+}
+
+fn is_wayland_session_from_env(wayland_display: Option<&str>, gdk_backend: Option<&str>) -> bool {
+    if !cfg!(target_os = "linux") {
+        return false;
+    }
+    if let Some(backend) = gdk_backend {
+        if let Some(first) = backend.split(',').map(str::trim).find(|s| !s.is_empty()) {
+            return first.eq_ignore_ascii_case("wayland");
+        }
+    }
+    wayland_display.is_some_and(|v| !v.is_empty())
+}
+
 fn is_wayland_session() -> bool {
-    cfg!(target_os = "linux") && std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty())
+    let wayland = std::env::var("WAYLAND_DISPLAY").ok();
+    let backend = std::env::var("GDK_BACKEND").ok();
+    is_wayland_session_from_env(wayland.as_deref(), backend.as_deref())
 }
 
 /// Clamp the window to the target monitor's WORK AREA (excludes the taskbar and
@@ -268,6 +495,7 @@ fn pause_media_for_hidden(w: &tauri::WebviewWindow) {
 }
 
 /// Resume playback when the window becomes visible again.
+#[cfg(not(target_os = "linux"))]
 fn resume_media_for_visible(w: &tauri::WebviewWindow) {
     let _ = w.eval("if (window.__resumeIfNeeded) window.__resumeIfNeeded();");
     let _ = w.eval_with_callback(REPORT_JS, |report| {
@@ -286,6 +514,7 @@ fn resume_media_for_visible(w: &tauri::WebviewWindow) {
 /// background. This thread polls the REAL window state and drives the page
 /// helpers on every hidden/visible transition. Cheap: two state reads every
 /// 800 ms, and the page eval only runs on a state CHANGE.
+#[cfg(not(target_os = "linux"))]
 fn watch_instagram_window(w: tauri::WebviewWindow) {
     // Keep one grouped "IG-Now" audio session registered across active render
     // endpoints so Windows Volume Mixer recognizes "IG-Now" cleanly.
@@ -362,6 +591,25 @@ fn watch_instagram_window(w: tauri::WebviewWindow) {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn maybe_log_linux_startup_report(w: tauri::WebviewWindow) {
+    if std::env::var_os("IGNOW_STARTUP_REPORT").is_none() {
+        return;
+    }
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(20));
+        if w.app_handle()
+            .get_webview_window(INSTAGRAM_WINDOW_LABEL)
+            .is_none()
+        {
+            return;
+        }
+        let _ = w.eval_with_callback(REPORT_JS, |report| {
+            eprintln!("[IG-Now] Watchdog startup report: {}", report);
+        });
+    });
+}
+
 pub fn launch_instagram_internal(app: &AppHandle, start_minimized: bool) -> Result<(), String> {
     let profile_data_dir = instagram_data_directory(app)?;
     fs::create_dir_all(&profile_data_dir).map_err(|error| error.to_string())?;
@@ -372,6 +620,8 @@ pub fn launch_instagram_internal(app: &AppHandle, start_minimized: bool) -> Resu
             let _ = window.unminimize();
             let _ = window.show();
             let _ = window.set_focus();
+            #[cfg(target_os = "linux")]
+            let _ = window.eval("if (window.__resumeIfNeeded) window.__resumeIfNeeded();");
         }
         return Ok(());
     }
@@ -380,11 +630,19 @@ pub fn launch_instagram_internal(app: &AppHandle, start_minimized: bool) -> Resu
     // can freeze native decorations/input mapping; show immediately unless `--minimized`.
     let start_visible_now = !start_minimized && cfg!(target_os = "linux");
 
+    // On Linux, boot onto about:blank so WebKitGTK CacheModel::WebBrowser and smooth
+    // scrolling are configured BEFORE the initial https://www.instagram.com/ navigation.
+    let initial_url = if cfg!(target_os = "linux") {
+        "about:blank"
+    } else {
+        "https://www.instagram.com/"
+    };
+
     let browser_app = app.clone();
     let window = WebviewWindowBuilder::new(
         app,
         INSTAGRAM_WINDOW_LABEL,
-        WebviewUrl::External("https://www.instagram.com/".parse().unwrap()),
+        WebviewUrl::External(initial_url.parse().unwrap()),
     )
     .title("IG-Now")
     .inner_size(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)
@@ -400,7 +658,10 @@ pub fn launch_instagram_internal(app: &AppHandle, start_minimized: bool) -> Resu
     .initialization_script(DIRECT_MESSAGES_SCRIPT)
     .initialization_script(INSTAGRAM_HELPER_SCRIPT)
     .on_page_load(move |window, payload| {
-        if payload.event() == tauri::webview::PageLoadEvent::Finished && !start_minimized {
+        if payload.event() == tauri::webview::PageLoadEvent::Finished
+            && !start_minimized
+            && matches!(payload.url().scheme(), "http" | "https")
+        {
             if !INITIAL_GEOMETRY_APPLIED.swap(true, Ordering::Relaxed) {
                 fit_window_to_work_area(&window);
             }
@@ -449,12 +710,59 @@ pub fn launch_instagram_internal(app: &AppHandle, start_minimized: bool) -> Resu
     // autostart-hidden case so restoring shows the right geometry).
     fit_window_to_work_area(&window);
 
-    // Start the playback watchdog exactly once for this window. It polls the
-    // REAL window state (minimized/visible) and applies the layered pause /
-    // resume on transitions, plus the Windows session unmute retry.
+    #[cfg(target_os = "linux")]
+    {
+        use webkit2gtk::{
+            CacheModel, HardwareAccelerationPolicy, SettingsExt, WebContextExt, WebViewExt,
+        };
+        let scale_factor = window
+            .current_monitor()
+            .ok()
+            .flatten()
+            .map(|m| m.scale_factor())
+            .unwrap_or(1.0);
+        let wayland_session = is_wayland_session();
+        let smooth_scroll = true;
+        let _ = window.with_webview(move |platform_webview| {
+            let wv = platform_webview.inner();
+            if let Some(settings) = wv.settings() {
+                settings.set_enable_smooth_scrolling(smooth_scroll);
+                settings.set_hardware_acceleration_policy(HardwareAccelerationPolicy::Always);
+            }
+            let cache_model = if let Some(ctx) = wv.context() {
+                if ctx.cache_model() != CacheModel::WebBrowser {
+                    ctx.set_cache_model(CacheModel::WebBrowser);
+                }
+                format!("{:?}", ctx.cache_model())
+            } else {
+                "none".to_string()
+            };
+            let gdk_backend = std::env::var("GDK_BACKEND").unwrap_or_else(|_| "unset".into());
+            let dmabuf_val = std::env::var("WEBKIT_DISABLE_DMABUF_RENDERER")
+                .unwrap_or_else(|_| "0(unset)".into());
+            let dmabuf_reason = LINUX_DMABUF_REASON.get().copied().unwrap_or("unknown");
+            let skia_threads = std::env::var("WEBKIT_SKIA_CPU_PAINTING_THREADS")
+                .unwrap_or_else(|_| "default".into());
+            let vblank_timer =
+                std::env::var("WEBKIT_FORCE_VBLANK_TIMER").unwrap_or_else(|_| "default".into());
+            let gst_rank =
+                std::env::var("GST_PLUGIN_FEATURE_RANK").unwrap_or_else(|_| "default".into());
+            eprintln!(
+                "[IG-Now] Linux runtime: gdk_backend={gdk_backend} wayland_window={wayland_session} scale={scale_factor:.2} dmabuf_disabled={dmabuf_val} ({dmabuf_reason}) skia_threads={skia_threads} vblank_timer={vblank_timer} smooth_scroll={smooth_scroll} cache_model={cache_model} gst_rank={gst_rank}"
+            );
+            wv.load_uri("https://www.instagram.com/");
+        });
+    }
+
+    // Start the playback watchdog once on Windows/macOS; on Linux rely on window/tray events.
     if !WATCHDOG_STARTED.swap(true, Ordering::Relaxed) {
-        let w = window.clone();
-        std::thread::spawn(move || watch_instagram_window(w));
+        #[cfg(not(target_os = "linux"))]
+        {
+            let w = window.clone();
+            std::thread::spawn(move || watch_instagram_window(w));
+        }
+        #[cfg(target_os = "linux")]
+        maybe_log_linux_startup_report(window.clone());
     }
 
     Ok(())
@@ -760,6 +1068,12 @@ fn curl_download_to_file(
     cmd.args([
         "--fail",
         "--location",
+        "--proto",
+        "=http,https",
+        "--proto-redir",
+        "=http,https",
+        "--max-redirs",
+        "5",
         "--silent",
         "--show-error",
         "--retry",
@@ -939,10 +1253,7 @@ fn fetch_media_to_path(
                     validate_or_remove_mp4(target_path)?;
                     return Ok(None);
                 }
-                let move_res = fs::rename(&temp_v, target_path)
-                    .or_else(|_| fs::copy(&temp_v, target_path).map(|_| ()));
-                let _ = fs::remove_file(&temp_v);
-                move_res.map_err(|e| e.to_string())?;
+                downloader::replace_file_atomically(&temp_v, target_path)?;
                 let _ = downloader::ensure_mp4_aac_audio(&ffmpeg, target_path, None);
                 return Ok(Some(
                     "Saved .mp4 video stream only; DASH audio muxing failed.".to_string(),
@@ -971,10 +1282,12 @@ fn fetch_media_to_path(
                     }
                 }
             }
-            let warn = downloader::ensure_mp4_aac_audio(&ffmpeg, target_path, temp_fb.as_deref())?;
+            let ensure_res =
+                downloader::ensure_mp4_aac_audio(&ffmpeg, target_path, temp_fb.as_deref());
             if let Some(ref p) = temp_fb {
                 let _ = fs::remove_file(p);
             }
+            let warn = ensure_res?;
             validate_or_remove_mp4(target_path)?;
             return Ok(warn);
         }
@@ -1124,6 +1437,23 @@ async fn inspect_instagram_post(
     let shortcode = downloader::shortcode_from_url(&clean_input);
     let has_ffmpeg = downloader::find_ffmpeg_binary().is_some();
 
+    let seed_post = seed_payload_json
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .and_then(|seed| {
+            let post =
+                downloader::extract_post_from_json_text(seed, shortcode.as_deref(), has_ffmpeg)?;
+            Some((seed, post))
+        });
+
+    if let Some((seed_raw, post)) = &seed_post {
+        if downloader::is_complete_seed_post(seed_raw, post, shortcode.as_deref()) {
+            return Ok(post.clone());
+        }
+    }
+
+    let seed_post = seed_post.map(|(_, post)| post);
+
     let (cookie_header, csrf_token) = instagram_auth_headers(&app, None);
     let input_for_http = clean_input.clone();
     let http_res = tokio::task::spawn_blocking(move || {
@@ -1135,13 +1465,6 @@ async fn inspect_instagram_post(
     })
     .await
     .map_err(|e| e.to_string())?;
-
-    let seed_post = seed_payload_json
-        .as_deref()
-        .filter(|s| !s.trim().is_empty())
-        .and_then(|seed| {
-            downloader::extract_post_from_json_text(seed, shortcode.as_deref(), has_ffmpeg)
-        });
 
     if let Ok(post) = http_res {
         let mut best = match seed_post {
@@ -1625,6 +1948,11 @@ pub fn run() {
                     #[cfg(windows)]
                     let _ = audio::ensure_foreground_audio_ready();
                     if let Some(win) = window.get_webview_window(INSTAGRAM_WINDOW_LABEL) {
+                        #[cfg(target_os = "linux")]
+                        let _ = win.eval(
+                            "if (window.__resumeIfNeeded) window.__resumeIfNeeded(); if (window.__ignowEnsureForegroundAudio) window.__ignowEnsureForegroundAudio();",
+                        );
+                        #[cfg(not(target_os = "linux"))]
                         let _ = win.eval(
                             "if (window.__ignowEnsureForegroundAudio) window.__ignowEnsureForegroundAudio();",
                         );
@@ -1921,5 +2249,113 @@ mod download_tests {
         assert!(super::is_window_hidden_state(Some(true), Some(true)));
         assert!(super::is_window_hidden_state(Some(false), Some(false)));
         assert!(super::is_window_hidden_state(None, None));
+    }
+
+    #[test]
+    fn linux_x11_backend_default_and_wayland_detection_respect_overrides() {
+        use std::ffi::OsStr;
+        let expected_linux = cfg!(target_os = "linux");
+
+        assert_eq!(
+            super::dmabuf_disable_reason(None, true, false, true, true, false),
+            expected_linux.then_some("wslg")
+        );
+        assert_eq!(
+            super::dmabuf_disable_reason(None, false, true, true, true, true),
+            expected_linux.then_some("nvidia")
+        );
+        assert_eq!(
+            super::dmabuf_disable_reason(None, false, false, false, true, true),
+            expected_linux.then_some("no-render-node")
+        );
+        assert_eq!(
+            super::dmabuf_disable_reason(None, false, false, true, true, false),
+            expected_linux.then_some("x11-no-dri3")
+        );
+        assert_eq!(
+            super::dmabuf_disable_reason(None, false, false, true, true, true),
+            None
+        );
+        assert_eq!(
+            super::dmabuf_disable_reason(Some(OsStr::new("0")), true, true, false, true, false),
+            None
+        );
+
+        assert_eq!(
+            super::should_demote_nvdec_plugins(None, true),
+            expected_linux
+        );
+        assert!(!super::should_demote_nvdec_plugins(None, false));
+        assert!(!super::should_demote_nvdec_plugins(
+            Some(OsStr::new("nvh264dec:MAX")),
+            true,
+        ));
+
+        assert_eq!(super::recommended_skia_cpu_threads(1), 1);
+        assert_eq!(super::recommended_skia_cpu_threads(2), 2);
+        assert_eq!(super::recommended_skia_cpu_threads(4), 4);
+        assert_eq!(super::recommended_skia_cpu_threads(12), 6);
+        assert_eq!(super::recommended_skia_cpu_threads(20), 8);
+
+        assert_eq!(
+            super::should_configure_cpu_fallback_tuning(true, None),
+            expected_linux
+        );
+        assert!(!super::should_configure_cpu_fallback_tuning(false, None));
+        assert!(!super::should_configure_cpu_fallback_tuning(
+            true,
+            Some(OsStr::new("0")),
+        ));
+
+        assert_eq!(
+            super::should_default_x11_backend(
+                None,
+                Some(OsStr::new("wayland-0")),
+                Some(OsStr::new(":0")),
+            ),
+            expected_linux
+        );
+        assert!(!super::should_default_x11_backend(
+            Some(OsStr::new("wayland")),
+            Some(OsStr::new("wayland-0")),
+            Some(OsStr::new(":0")),
+        ));
+        assert!(!super::should_default_x11_backend(
+            None,
+            Some(OsStr::new("wayland-0")),
+            None,
+        ));
+        assert!(!super::should_default_x11_backend(
+            None,
+            Some(OsStr::new("wayland-0")),
+            Some(OsStr::new("")),
+        ));
+
+        assert!(!super::is_wayland_session_from_env(
+            Some("wayland-0"),
+            Some("x11"),
+        ));
+        assert_eq!(
+            super::is_wayland_session_from_env(Some("wayland-0"), None),
+            expected_linux
+        );
+        assert_eq!(
+            super::is_wayland_session_from_env(Some("wayland-0"), Some("wayland,x11")),
+            expected_linux
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn drm_render_node_detection_checks_any_render_device() {
+        let mut dir = std::env::temp_dir();
+        dir.push(format!("ignow-drm-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("card0"), b"").unwrap();
+        assert!(!super::has_drm_render_node_in_dir(&dir));
+        fs::write(dir.join("renderD129"), b"").unwrap();
+        assert!(super::has_drm_render_node_in_dir(&dir));
+        let _ = fs::remove_dir_all(&dir);
     }
 }

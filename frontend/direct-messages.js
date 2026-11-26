@@ -45,7 +45,7 @@
     module.exports = { safeUrl, extractLinks, parsePayload, badgeCount };
     return;
   }
-  if (!root.document || root.__ignowDirectMessagesInstalled) return;
+  if (!root.document || root.__ignowDirectMessagesInstalled || (root.top && root.top !== root) || root.location?.protocol === "about:") return;
   root.__ignowDirectMessagesInstalled = true;
   const document = root.document;
   const invoke = root.__TAURI__?.core?.invoke;
@@ -118,7 +118,11 @@
         box.appendChild(button);
       }
     } finally {
-      observer?.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+      if (isDirect()) {
+        observer?.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+      } else if (inboxCount === null) {
+        observer?.observe(document.documentElement, { childList: true, subtree: true });
+      }
     }
   }
   function schedule() { if (!disposed && timer === null) timer = root.setTimeout(render, 250); }
@@ -185,11 +189,12 @@
     `;
     document.documentElement.appendChild(style);
     observer = new root.MutationObserver(records => {
+      const direct = isDirect();
       if (records.some(record => !record.target.parentElement?.closest(".ignow-video-controls, .ignow-dmlinks") &&
-        (isDirect() || record.target.closest?.('a[href*="/direct/inbox"]') ||
+        (direct || (inboxCount === null && (record.target.closest?.('a[href*="/direct/inbox"]') ||
           (record.type === "childList" && record.addedNodes.length > 0 &&
             Array.from(record.addedNodes).some(node => node.nodeType === 1 &&
-              (node.matches('a[href*="/direct/inbox"]') || node.querySelector('a[href*="/direct/inbox"]'))))))) schedule();
+              (node.matches('a[href*="/direct/inbox"]') || node.querySelector('a[href*="/direct/inbox"]'))))))))) schedule();
     });
     root.addEventListener("popstate", schedule);
     for (const method of ["pushState", "replaceState"]) {
@@ -197,7 +202,7 @@
       root.history[method] = function (...args) { const result = original.apply(this, args); schedule(); return result; };
     }
     render();
-    inboxTimer = root.setTimeout(refreshInbox, 2000);
+    inboxTimer = root.setTimeout(refreshInbox, 5000);
     root.addEventListener("pagehide", () => {
       disposed = true;
       observer.disconnect();

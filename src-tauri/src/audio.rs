@@ -220,19 +220,38 @@ pub fn active_render_endpoint_ids() -> Vec<String> {
 /// Keeps one grouped `"IG-Now"` Core Audio session handle open per active
 /// render endpoint so Windows Settings -> Sound -> Volume mixer recognizes
 /// "IG-Now" before WebView2 starts its own media stream.
+/// Releases COM interfaces BEFORE uninitializing the MTA apartment on drop.
 pub struct AudioSessionKeepAlive {
-    _handles: Vec<IAudioSessionControl>,
+    handles: Vec<IAudioSessionControl>,
+    com_initialized: bool,
+}
+
+impl Drop for AudioSessionKeepAlive {
+    fn drop(&mut self) {
+        self.handles.clear();
+        if self.com_initialized {
+            unsafe {
+                CoUninitialize();
+            }
+        }
+    }
 }
 
 pub fn register_app_sessions_with_mute(start_muted: bool) -> AudioSessionKeepAlive {
     let mut handles = Vec::new();
+    let mut com_initialized = false;
     unsafe {
-        let _ = with_com(|| {
-            let Ok(enumerator) =
-                CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL)
-            else {
-                return false;
+        let hr = CoInitializeEx(None, COINIT_MULTITHREADED);
+        if hr.is_err() && hr != RPC_E_CHANGED_MODE {
+            return AudioSessionKeepAlive {
+                handles,
+                com_initialized,
             };
+        }
+        com_initialized = hr.is_ok();
+        if let Ok(enumerator) =
+            CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL)
+        {
             visit_active_render_managers(&enumerator, |manager| {
                 if let Ok(ctrl) = manager.GetAudioSessionControl(Some(&IG_NOW_AUDIO_GROUP), 0) {
                     brand_audio_session(&ctrl);
@@ -242,10 +261,12 @@ pub fn register_app_sessions_with_mute(start_muted: bool) -> AudioSessionKeepAli
                     handles.push(ctrl);
                 }
             });
-            true
-        });
+        }
     }
-    AudioSessionKeepAlive { _handles: handles }
+    AudioSessionKeepAlive {
+        handles,
+        com_initialized,
+    }
 }
 
 pub fn register_app_sessions() -> AudioSessionKeepAlive {
@@ -339,5 +360,16 @@ mod tests {
                 CoUninitialize();
             }
         }
+    }
+
+    #[test]
+    fn audio_session_keepalive_safe_on_uninitialized_worker_thread() {
+        std::thread::spawn(|| {
+            let mut keepalive = super::register_app_sessions();
+            keepalive = super::register_app_sessions_with_mute(true);
+            drop(keepalive);
+        })
+        .join()
+        .expect("worker thread COM keepalive drop must not fail or panic");
     }
 }

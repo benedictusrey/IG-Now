@@ -694,13 +694,19 @@ test("20-slide mixed photo+video carousel renders thumbnail strip, honors initia
     assert.equal(audioBtn.disabled, false);
 
     // Trigger Save Full Post and emit live progress updates
+    const inspectBtn = win.document.getElementById("inspect-btn");
+    const postSection = win.document.getElementById("post-section");
     win.document.getElementById("download-bundle-btn").click();
     await new Promise(r => setTimeout(r, 15));
+    assert.equal(inspectBtn.disabled, true);
+    assert.equal(inspectBtn.textContent, "Inspect Link", "download busy state must not rename Inspect Link button to Inspecting...");
+    assert.equal(postSection.getAttribute("aria-busy"), "true");
     assert(progressListener, "must subscribe to downloader-progress events");
     progressListener({ payload: { completed: 8, total: 20 } });
     assert(statusBox.textContent.includes("8/20"), statusBox.textContent);
     releaseDownload();
     await new Promise(r => setTimeout(r, 30));
+    assert.equal(postSection.getAttribute("aria-busy"), "false");
     assert(statusBox.textContent.includes("20 file(s)"), statusBox.textContent);
   } finally {
     win.close();

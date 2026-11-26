@@ -28,6 +28,10 @@
 !releases/**/README.md
 !releases/versions.json
 
+# Local release & audit reports (excluded from release trees)
+/mds/
+IG-Now_v*.md
+
 # Windows/macOS metadata
 Thumbs.db
 .DS_Store

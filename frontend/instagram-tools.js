@@ -4,6 +4,7 @@
 // All rights reserved. See LICENSE for details.
 
 (function () {
+  if (window.top !== window || window.location?.protocol === "about:") return;
   if (window.__ignowMediaToolsInstalled) return;
   window.__ignowMediaToolsInstalled = true;
 
@@ -83,6 +84,11 @@
       background: rgba(255, 255, 255, 0.24);
     }
 
+    .ignow-media-viewer__toolbar button:focus-visible {
+      outline: 2px solid #4a90ff;
+      outline-offset: 2px;
+    }
+
     .ignow-media-viewer__toolbar .ignow-media-viewer__close {
       margin-left: auto;
       font-size: 19px;
@@ -106,6 +112,7 @@
       min-height: 0;
       overflow: hidden;
       cursor: grab;
+      touch-action: none;
       user-select: none;
     }
 
@@ -153,7 +160,8 @@
     .ignow-media-menu button:hover,
     .ignow-media-menu button:focus-visible {
       background: rgba(255, 255, 255, 0.1);
-      outline: none;
+      outline: 2px solid #4a90ff;
+      outline-offset: -2px;
     }
 
     .ignow-media-menu__divider {
@@ -215,7 +223,8 @@
     .ignow-video-controls button:hover,
     .ignow-video-controls button:focus-visible {
       background: rgba(255, 255, 255, 0.18) !important;
-      outline: none !important;
+      outline: 2px solid #f4f5f7 !important;
+      outline-offset: 1px !important;
     }
 
     .ignow-video-controls__time {
@@ -293,7 +302,7 @@
         rgba(255, 255, 255, 0.42) 100%
       ) !important;
       background-clip: content-box !important;
-      filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.85)) !important;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.75) !important;
       cursor: pointer !important;
       pointer-events: auto !important;
       appearance: none !important;
@@ -322,7 +331,8 @@
     .ignow-video-controls__volume-slider:focus-visible {
       width: 64px !important;
       opacity: 1 !important;
-      outline: none !important;
+      outline: 2px solid #f4f5f7 !important;
+      outline-offset: 2px !important;
     }
 
     /* Mute-first users: a muted element shows its audible level on the
@@ -513,6 +523,11 @@
       appearance: none !important;
       -webkit-appearance: none !important;
       accent-color: #fff !important;
+    }
+
+    .ignow-video-controls__progress:focus-visible {
+      outline: 2px solid #f4f5f7 !important;
+      outline-offset: 2px !important;
     }
 
     .ignow-video-controls__progress::-webkit-slider-runnable-track {
@@ -849,6 +864,13 @@
   window.addEventListener("blur", () => {
     pendingPointerPress = null; // alt-tab mid-press: abandon like native
     pressOnOurBarId = null;
+    if (activePointerSeeks.size) {
+      for (const input of activePointerSeeks.values()) {
+        seekDelegates.get(input)?.release?.();
+      }
+      activePointerSeeks.clear();
+      lastPointerSeekByPointerId.clear();
+    }
   });
 
   // Clicks inside the control bar are still fully isolated so Instagram's
@@ -1076,12 +1098,13 @@
   }
 
   function isNativeAudioButton(button) {
-    if (!(button instanceof Element) || !isVisible(button)) return false;
+    if (!(button instanceof Element)) return false;
     if (button.closest(".ignow-video-controls, .ignow-sidebar-back, .ignow-sidebar-forward, .ignow-sidebar-downloader, .ignow-sidebar-floating-nav, #__ignow_about")) return false;
     const label = buttonAccessibleLabel(button);
     if (!label) return false;
     if (/(download|caption|comment|like|share|repost|save|bookmark|close|dismiss|next|prev|back|more|settings)/i.test(label)) return false;
-    return /(audio\s+is\s+(?:muted|playing)|\b(?:un)?mute\b|toggle\s+audio|\bsound\b)/i.test(label);
+    if (!/(audio\s+is\s+(?:muted|playing)|\b(?:un)?mute\b|toggle\s+audio|\bsound\b)/i.test(label)) return false;
+    return isVisible(button);
   }
 
   function readNativeButtonMuted(button) {
@@ -1097,28 +1120,43 @@
     return null;
   }
 
+  const nativeMuteButtons = typeof WeakMap === "function" ? new WeakMap() : null;
+
   function findNativeMuteButton(video) {
     if (!(video instanceof HTMLVideoElement)) return null;
-    const vRect = video.getBoundingClientRect();
+    const currentSrc = video.currentSrc || video.src || "";
+    const cached = nativeMuteButtons?.get(video);
+    if (cached && cached.btn.isConnected && cached.src === currentSrc && isNativeAudioButton(cached.btn)) {
+      return cached.btn;
+    }
+    let vRect = null;
     let bestBtn = null;
     let bestDist = Infinity;
     let scope = video.parentElement;
     for (let depth = 0; scope && scope !== document.body && scope !== document.documentElement && depth < 7; depth += 1, scope = scope.parentElement) {
       const candidates = Array.from(scope.querySelectorAll("button, [role='button']")).filter(isNativeAudioButton);
       if (candidates.length) {
-        for (const btn of candidates) {
-          const r = btn.getBoundingClientRect();
-          const cx = r.left + r.width / 2;
-          const cy = r.top + r.height / 2;
-          const tx = vRect.width > 0 ? vRect.right : cx;
-          const ty = vRect.height > 0 ? vRect.bottom : cy;
-          const dist = Math.hypot(cx - tx, cy - ty);
-          if (dist < bestDist) {
-            bestDist = dist;
-            bestBtn = btn;
+        if (candidates.length === 1) {
+          bestBtn = candidates[0];
+        } else {
+          if (!vRect) vRect = video.getBoundingClientRect();
+          for (const btn of candidates) {
+            const r = btn.getBoundingClientRect();
+            const cx = r.left + r.width / 2;
+            const cy = r.top + r.height / 2;
+            const tx = vRect.width > 0 ? vRect.right : cx;
+            const ty = vRect.height > 0 ? vRect.bottom : cy;
+            const dist = Math.hypot(cx - tx, cy - ty);
+            if (dist < bestDist) {
+              bestDist = dist;
+              bestBtn = btn;
+            }
           }
         }
-        if (bestBtn) return bestBtn;
+        if (bestBtn) {
+          nativeMuteButtons?.set(video, { btn: bestBtn, src: currentSrc });
+          return bestBtn;
+        }
       }
       if (scope.matches("[data-ignow-media-stage], article, [role='dialog'], main")) break;
     }
@@ -1152,6 +1190,7 @@
     if (event.button !== 0) return;
     const media = mediaFromTarget(event.target) || mediaAtPoint(event.clientX, event.clientY);
     if (!(media instanceof HTMLVideoElement)) return;
+    if (media.dataset.ignowNativeControls !== "1") installNativeVideoControls(media, true);
     state.activeVideo = media;
     if (isSearchCardVideo(media)) {
       state.videoAudioUnlocked = true;
@@ -1242,26 +1281,74 @@
     }
   }
 
+  let lastReelScrollAt = 0;
+  let pendingNativeMuteSyncTimer = null;
+  let pendingNativeMuteSyncRaf = null;
+
+  function markReelScrolling() {
+    lastReelScrollAt = Date.now();
+  }
+
+  function cancelPendingNativeMuteSync() {
+    if (pendingNativeMuteSyncTimer !== null) {
+      window.clearTimeout(pendingNativeMuteSyncTimer);
+      pendingNativeMuteSyncTimer = null;
+    }
+    if (pendingNativeMuteSyncRaf !== null && typeof window.cancelAnimationFrame === "function") {
+      window.cancelAnimationFrame(pendingNativeMuteSyncRaf);
+      pendingNativeMuteSyncRaf = null;
+    }
+  }
+
+  function syncNativeMuteButtonNow(video, desiredMuted) {
+    const nativeBtn = findNativeMuteButton(video);
+    if (!nativeBtn) return;
+    const nativeMuted = readNativeButtonMuted(nativeBtn);
+    if (nativeMuted !== null && nativeMuted !== desiredMuted) {
+      video.dataset.ignowNativeToggleAt = String(Date.now());
+      nativeBtn.click();
+    }
+  }
+
+  function scheduleNativeMuteSync(video, desiredMuted) {
+    cancelPendingNativeMuteSync();
+    const run = () => {
+      pendingNativeMuteSyncTimer = null;
+      pendingNativeMuteSyncRaf = null;
+      if (!(video instanceof HTMLVideoElement) || !video.isConnected) return;
+      if (video.paused || Boolean(video.muted) !== Boolean(desiredMuted)) return;
+      if (state.activeVideo && state.activeVideo !== video && !state.activeVideo.paused) return;
+      if (video.dataset.ignowSyncingNative === "1") return;
+      video.dataset.ignowSyncingNative = "1";
+      try {
+        syncNativeMuteButtonNow(video, Boolean(desiredMuted));
+      } finally {
+        video.dataset.ignowSyncingNative = "";
+      }
+    };
+    const elapsed = Date.now() - lastReelScrollAt;
+    if (elapsed < 180) {
+      pendingNativeMuteSyncTimer = window.setTimeout(run, 180 - elapsed);
+    } else if (typeof window.requestAnimationFrame === "function") {
+      pendingNativeMuteSyncRaf = window.requestAnimationFrame(run);
+    } else {
+      pendingNativeMuteSyncTimer = window.setTimeout(run, 16);
+    }
+  }
+
   function setMediaMuteSynced(video, targetMuted, userExplicit = false) {
     if (!(video instanceof HTMLVideoElement) || video.dataset.ignowSyncingNative === "1") return;
     video.dataset.ignowSyncingNative = "1";
     try {
       const desiredMuted = Boolean(targetMuted);
       if (userExplicit) {
+        cancelPendingNativeMuteSync();
         markAudioUserControlled(video);
       } else if (!desiredMuted) {
         video.dataset.ignowAudioUserActivated = "";
       }
       video.dataset.ignowMutedByIgnow = desiredMuted ? "1" : "";
 
-      const nativeBtn = findNativeMuteButton(video);
-      if (nativeBtn) {
-        const nativeMuted = readNativeButtonMuted(nativeBtn);
-        if (nativeMuted !== null && nativeMuted !== desiredMuted) {
-          video.dataset.ignowNativeToggleAt = String(Date.now());
-          nativeBtn.click();
-        }
-      }
       if (video.muted !== desiredMuted) {
         setVideoMuted(video, desiredMuted);
       }
@@ -1269,6 +1356,12 @@
         setVideoVolume(video, defaultVolumeForVideo(video));
       }
       videoControllers.get(video)?.refresh?.();
+
+      if (userExplicit) {
+        syncNativeMuteButtonNow(video, desiredMuted);
+      } else if (!video.paused) {
+        scheduleNativeMuteSync(video, desiredMuted);
+      }
     } finally {
       video.dataset.ignowSyncingNative = "";
     }
@@ -1291,34 +1384,165 @@
     });
   }
 
-  function isVideoOnScreen(video) {
+  function isGridVideoTile(video) {
+    return !isStandaloneVideo(video) && Boolean(video?.closest?.("a[href]"));
+  }
+
+  let deferredVideoObserver = null;
+  const observedDeferredVideos = typeof WeakSet === "function" ? new WeakSet() : null;
+
+  function restoreDeferredVideo(video) {
+    if (!(video instanceof HTMLVideoElement)) return false;
+    const deferred = video.dataset.ignowDeferredSrc;
+    if (!deferred) return false;
+    delete video.dataset.ignowDeferredSrc;
+    video.preload = isGridVideoTile(video) ? "none" : "metadata";
+    video.src = deferred;
+    return true;
+  }
+
+  function deferVideoSource(video) {
+    if (!(video instanceof HTMLVideoElement)) return false;
+    if (!video.paused) video.pause();
+    if (video.preload !== "none") video.preload = "none";
+    const src = video.currentSrc || video.src || "";
+    if (/^https?:\/\//i.test(src)
+      && !video.dataset.ignowDeferredSrc
+      && !video.querySelector("source")) {
+      video.dataset.ignowDeferredSrc = src;
+      trackDeferredVideo(video);
+      video.removeAttribute("src");
+      video.load();
+      return true;
+    }
+    return false;
+  }
+
+  function trackDeferredVideo(video) {
+    if (!deferredVideoObserver && typeof IntersectionObserver === "function") {
+      deferredVideoObserver = new IntersectionObserver(entries => {
+        for (let i = 0; i < entries.length; i += 1) {
+          const target = entries[i].target;
+          if (!(target instanceof HTMLVideoElement)) continue;
+          if (entries[i].isIntersecting) {
+            restoreDeferredVideo(target);
+          } else if (isGridVideoTile(target) && target !== state.activeVideo && !target.closest("[role='dialog']")) {
+            deferVideoSource(target);
+          }
+        }
+      }, { rootMargin: "300px 10000px" });
+    }
+    if (deferredVideoObserver && observedDeferredVideos && !observedDeferredVideos.has(video)) {
+      observedDeferredVideos.add(video);
+      deferredVideoObserver.observe(video);
+    }
+  }
+
+  function capOffscreenVideos(activeVideo = null) {
+    const videos = document.querySelectorAll("video");
+    if (!videos.length) return;
+    const vh = window.innerHeight || 720;
+    const feedMinTop = -vh * 1.5;
+    const feedMaxTop = vh * 2.5;
+    const linuxMode = isLinuxWebKitRuntime();
+    for (let i = 0; i < videos.length; i += 1) {
+      const video = videos[i];
+      if (video === activeVideo) continue;
+      const isGrid = isGridVideoTile(video);
+      if (isGrid && video.paused && video.preload !== "none") {
+        video.preload = "none";
+      }
+      if (isGrid && deferredVideoObserver && observedDeferredVideos?.has(video)) {
+        continue;
+      }
+      const rect = video.getBoundingClientRect();
+      const hiddenOffRoute = rect.height <= 0 && !video.closest("[role='dialog']");
+      if (hiddenOffRoute) {
+        if (!video.paused) video.pause();
+        if (video.preload !== "none") video.preload = "none";
+        deferVideoSource(video);
+        if (linuxMode && video.dataset.ignowNativeControls === "1") {
+          videoControllers.get(video)?.teardown?.();
+        }
+        continue;
+      }
+      if (rect.height <= 0) continue;
+      const minTop = isGrid ? 0 : feedMinTop;
+      const maxTop = isGrid ? vh : feedMaxTop;
+      const offscreen = rect.bottom < minTop || rect.top > maxTop;
+      if (offscreen) {
+        if (!video.paused) video.pause();
+        // Progressive HTTPS videos on Explore grid / Home feed can be unloaded
+        // safely and restored via IntersectionObserver; never strip active
+        // standalone Reels blob: MSE URLs.
+        if (!isStandaloneVideo(video) && deferVideoSource(video)) {
+          // Unloaded progressive src cleanly.
+        } else if (video.preload !== "none" && video.preload !== "metadata") {
+          video.preload = "metadata";
+        }
+        if (linuxMode && video.paused && video.dataset.ignowNativeControls === "1"
+          && (rect.bottom < -vh * 2.5 || rect.top > vh * 3.5)) {
+          videoControllers.get(video)?.teardown?.();
+        }
+      } else if (video.dataset.ignowDeferredSrc) {
+        restoreDeferredVideo(video);
+      } else if (isGrid) {
+        trackDeferredVideo(video);
+      }
+    }
+  }
+
+  function videoElementRectIfOnScreen(video) {
+    if (!(video instanceof Element) || !video.isConnected) return null;
     const rect = video.getBoundingClientRect();
-    return rect.bottom > 0
-      && rect.right > 0
-      && rect.top < window.innerHeight
-      && rect.left < window.innerWidth;
+    const vw = window.innerWidth || 0;
+    const vh = window.innerHeight || 0;
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    if (rect.bottom <= 0 || rect.right <= 0 || rect.top >= vh || rect.left >= vw) return null;
+    if (getComputedStyle(video).visibility === "hidden") return null;
+    return rect;
+  }
+
+  function isVideoOnScreen(video) {
+    return videoElementRectIfOnScreen(video) !== null;
+  }
+
+  function measureVisiblePostVideos() {
+    const candidates = [];
+    const videos = document.querySelectorAll("video");
+    const vw = window.innerWidth || 0;
+    const vh = window.innerHeight || 0;
+    for (let i = 0; i < videos.length; i += 1) {
+      const video = videos[i];
+      if (video.closest("header, nav, aside, .ignow-media-viewer, #__ignow_about")) continue;
+      const rect = video.getBoundingClientRect();
+      if (rect.width < 120 || rect.height < 120) continue;
+      if (rect.bottom <= 0 || rect.right <= 0 || rect.top >= vh || rect.left >= vw) continue;
+      const hasPostContext = (rect.width >= 260 && rect.height >= 260) || Boolean(video.closest("article, [role=dialog]"));
+      if (!hasPostContext) continue;
+      if (getComputedStyle(video).visibility === "hidden") continue;
+      candidates.push({ video, area: rect.width * rect.height });
+    }
+    return candidates;
   }
 
   function visibleVideos() {
-    return Array.from(document.querySelectorAll("video"))
-      .filter(video => isVisible(video) && isVideoOnScreen(video) && isPostVideo(video));
+    return measureVisiblePostVideos().map(item => item.video);
   }
 
   function activeVideoForKeyboard() {
-    if (state.activeVideo?.isConnected
-      && isVisible(state.activeVideo)
-      && isVideoOnScreen(state.activeVideo)) return state.activeVideo;
-    const videos = visibleVideos();
-    return videos.find(video => !video.paused) || videos
-      .sort((left, right) => {
-        const leftRect = left.getBoundingClientRect();
-        const rightRect = right.getBoundingClientRect();
-        return (rightRect.width * rightRect.height) - (leftRect.width * leftRect.height);
-      })[0] || null;
+    if (videoElementRectIfOnScreen(state.activeVideo)) return state.activeVideo;
+    const candidates = measureVisiblePostVideos();
+    const playing = candidates.find(item => !item.video.paused);
+    if (playing) return playing.video;
+    if (!candidates.length) return null;
+    candidates.sort((left, right) => right.area - left.area);
+    return candidates[0].video;
   }
 
   function seekVideo(video, seconds) {
     if (!(video instanceof HTMLVideoElement)) return;
+    if (video.dataset.ignowNativeControls !== "1") installNativeVideoControls(video, true, true);
     state.activeVideo = video;
     videoControllers.get(video)?.seek?.(seconds);
   }
@@ -1327,8 +1551,29 @@
     return Math.max(400, window.innerHeight || 720);
   }
 
+  function dispatchReelArrowFallback(deltaY) {
+    const goingDown = deltaY > 0;
+    const fallback = new KeyboardEvent("keydown", {
+      key: goingDown ? "ArrowDown" : "ArrowUp",
+      code: goingDown ? "ArrowDown" : "ArrowUp",
+      bubbles: true,
+      cancelable: true
+    });
+    fallback.__ignowSyntheticNavigation = true;
+    const origin = document.activeElement instanceof Element
+      ? document.activeElement
+      : document.body;
+    origin.dispatchEvent(fallback);
+  }
+
+  let scheduleScanRef = null;
+
   function navigateReel(deltaY) {
-    const video = activeVideoForKeyboard();
+    const se = document.scrollingElement || document.documentElement;
+    const canDocScroll = Boolean(se && se.scrollHeight > (window.innerHeight || 0) + 4);
+    const video = (isStandaloneReelPage() && !canDocScroll)
+      ? (state.activeVideo?.isConnected ? state.activeVideo : null)
+      : activeVideoForKeyboard();
     const target = video || document.scrollingElement || document.body;
     const wheelEvent = new WheelEvent("wheel", {
       bubbles: true,
@@ -1340,33 +1585,32 @@
     // fallback we dispatch here must NOT re-enter navigateReel (loop guard).
     wheelEvent.__ignowSyntheticNavigation = true;
     target.dispatchEvent(wheelEvent);
-    if (window.scrollBy && !wheelEvent.defaultPrevented) {
-      const before = window.scrollY;
-      window.scrollBy({ top: deltaY, behavior: "smooth" });
-      // Synthetic wheel events cannot drive Instagram's slide-based reel
-      // viewer (it reacts to real input or its own keyboard layer), and
-      // scrollBy is a no-op when the viewer doesn't scroll. If the view did
-      // not move, hand the navigation to Instagram's OWN arrow-key handling —
-      // the exact path the Up/Down arrow keys use, which works everywhere
-      // the user can navigate. Dispatched through the real pipeline so
-      // capture and bubble listeners both see it.
-      window.setTimeout(() => {
-        if (Math.abs(window.scrollY - before) < 4) {
-          const goingDown = deltaY > 0;
-          const fallback = new KeyboardEvent("keydown", {
-            key: goingDown ? "ArrowDown" : "ArrowUp",
-            code: goingDown ? "ArrowDown" : "ArrowUp",
-            bubbles: true,
-            cancelable: true
-          });
-          fallback.__ignowSyntheticNavigation = true;
-          const origin = document.activeElement instanceof Element
-            ? document.activeElement
-            : document.body;
-          origin.dispatchEvent(fallback);
-        }
-      }, 220);
+    if (!wheelEvent.defaultPrevented) {
+      if (!canDocScroll) {
+        dispatchReelArrowFallback(deltaY);
+        scheduleScanRef?.(80);
+        return;
+      }
+      if (window.scrollBy) {
+        const before = window.scrollY;
+        window.scrollBy({ top: deltaY, behavior: "smooth" });
+        // Synthetic wheel events cannot drive Instagram's slide-based reel
+        // viewer (it reacts to real input or its own keyboard layer), and
+        // scrollBy is a no-op when the viewer doesn't scroll. If the view did
+        // not move, hand the navigation to Instagram's OWN arrow-key handling —
+        // the exact path the Up/Down arrow keys use, which works everywhere
+        // the user can navigate. Dispatched through the real pipeline so
+        // capture and bubble listeners both see it.
+        window.setTimeout(() => {
+          if (Math.abs(window.scrollY - before) < 4) {
+            dispatchReelArrowFallback(deltaY);
+          }
+          scheduleScanRef?.(80);
+        }, 220);
+        return;
+      }
     }
+    scheduleScanRef?.(80);
   }
 
   function linkFromTarget(target) {
@@ -1382,6 +1626,7 @@
 
   function sourceUrl(media) {
     const candidates = [
+      media.dataset?.ignowDeferredSrc,
       media.currentSrc,
       media.src,
       media.getAttribute("src"),
@@ -1800,18 +2045,22 @@
       const prev = state.mediaCache.get(key);
       return !prev || bundleRichnessScore(bundle) >= bundleRichnessScore(prev);
     };
+    const putLru = (map, key, val) => {
+      map.delete(key);
+      map.set(key, val);
+    };
     if (bundle.shortcode && shouldReplace(bundle.shortcode)) {
-      state.mediaCache.set(bundle.shortcode, bundle);
-      state.rawNodeCache.set(bundle.shortcode, bundle);
+      putLru(state.mediaCache, bundle.shortcode, bundle);
+      putLru(state.rawNodeCache, bundle.shortcode, bundle);
     }
     if (bundle.pk && shouldReplace(`pk:${bundle.pk}`)) {
-      state.mediaCache.set(`pk:${bundle.pk}`, bundle);
-      state.rawNodeCache.set(`pk:${bundle.pk}`, bundle);
+      putLru(state.mediaCache, `pk:${bundle.pk}`, bundle);
+      putLru(state.rawNodeCache, `pk:${bundle.pk}`, bundle);
     }
-    while (state.mediaCache.size > 160) {
+    while (state.mediaCache.size > 120) {
       state.mediaCache.delete(state.mediaCache.keys().next().value);
     }
-    while (state.rawNodeCache.size > 160) {
+    while (state.rawNodeCache.size > 120) {
       state.rawNodeCache.delete(state.rawNodeCache.keys().next().value);
     }
   }
@@ -1958,10 +2207,30 @@
     return fallbackBundle;
   }
 
+  const pendingNetworkPayloads = [];
+
+  function processQueuedNetworkPayload(item) {
+    if (!item) return;
+    if (item.type === "obj") cacheBundlesFromPayload(item.data);
+    else if (item.type === "text") extractBundlesFromJsonText(item.data, "", true);
+  }
+
+  function flushPendingNetworkPayloads() {
+    while (pendingNetworkPayloads.length) {
+      processQueuedNetworkPayload(pendingNetworkPayloads.shift());
+    }
+  }
+
+  function queueNetworkPayload(type, data) {
+    if (pendingNetworkPayloads.length >= 10) pendingNetworkPayloads.shift();
+    pendingNetworkPayloads.push({ type, data });
+  }
+
   function extractBundlesFromJsonText(text, targetShortcode, cacheOnly = false) {
     if (typeof text !== "string" || !text.trim() || text.length > 4 * 1024 * 1024) return null;
     const cleaned = text.replace(/^\s*for\s*\(;;\);/, "");
-    for (const line of cleaned.split("\n")) {
+    const lines = cleaned.indexOf("\n") === -1 ? [cleaned] : cleaned.split("\n");
+    for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed || (trimmed[0] !== "{" && trimmed[0] !== "[")) continue;
       try {
@@ -1981,6 +2250,7 @@
   }
 
   function extractFromPageScripts(targetShortcode) {
+    flushPendingNetworkPayloads();
     if (targetShortcode && state.mediaCache.has(targetShortcode)) {
       return state.mediaCache.get(targetShortcode);
     }
@@ -2318,6 +2588,7 @@
   }
 
   async function extractPostBundle(media) {
+    flushPendingNetworkPayloads();
     const rawPostUrl = postUrlForMedia(media) || normalizeInstagramPostUrl(window.location.href) || "";
     let shortcode = shortcodeFromPostUrl(rawPostUrl);
     const fiberBundle = extractFromReactFiber(media, shortcode);
@@ -2355,6 +2626,7 @@
   }
 
   async function resolvePlayableSources(media) {
+    flushPendingNetworkPayloads();
     const directUrl = sourceUrl(media);
     const candidates = [];
     let pairedAudioUrl = "";
@@ -2772,6 +3044,7 @@
   }
 
   async function openNativeDownloader(initialUrl = "", targetMedia = null) {
+    flushPendingNetworkPayloads();
     closeMenu();
     let detectedUrl = normalizeInstagramPostUrl(initialUrl)
       || (targetMedia ? postUrlForMedia(targetMedia) : "")
@@ -2823,6 +3096,7 @@
   }
 
   async function probePostForDownloader(requestId, targetUrl) {
+    flushPendingNetworkPayloads();
     const invokeFn = getInvoke();
     if (!requestId || typeof invokeFn !== "function") return false;
     let payloadJson = "";
@@ -2952,15 +3226,26 @@
   }
 
   function closeMenu() {
-    state.menu?.remove();
+    const prev = state.menu;
+    if (!prev) return;
+    const returnFocus = prev.__ignowPrevFocus;
+    const shouldRestore = document.activeElement && prev.contains(document.activeElement);
+    prev.remove();
     state.menu = null;
+    if (shouldRestore && returnFocus && typeof returnFocus.focus === "function" && returnFocus.isConnected) {
+      try { returnFocus.focus({ preventScroll: true }); } catch {
+        try { returnFocus.focus(); } catch {}
+      }
+    }
   }
 
   function showMenu(items, x, y) {
+    const prevFocus = document.activeElement;
     closeMenu();
     const menu = document.createElement("div");
     menu.className = "ignow-media-menu";
     menu.setAttribute("role", "menu");
+    menu.__ignowPrevFocus = prevFocus;
     items.forEach(({ label, action, divider }) => {
       if (divider) {
         const sep = document.createElement("div");
@@ -2984,6 +3269,18 @@
       });
       menu.appendChild(button);
     });
+    menu.addEventListener("keydown", event => {
+      const btns = Array.from(menu.querySelectorAll("button[role='menuitem']"));
+      if (!btns.length) return;
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        event.stopPropagation();
+        const curIdx = btns.indexOf(document.activeElement);
+        const delta = event.key === "ArrowDown" ? 1 : -1;
+        const nextIdx = curIdx < 0 ? 0 : (curIdx + delta + btns.length) % btns.length;
+        btns[nextIdx].focus();
+      }
+    });
     menu.style.left = `${Math.max(8, x)}px`;
     menu.style.top = `${Math.max(8, y)}px`;
     document.body.appendChild(menu);
@@ -2991,6 +3288,12 @@
     menu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - bounds.width - 8))}px`;
     menu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - bounds.height - 8))}px`;
     state.menu = menu;
+    const firstBtn = menu.querySelector("button[role='menuitem']");
+    if (firstBtn) {
+      try { firstBtn.focus({ preventScroll: true }); } catch {
+        try { firstBtn.focus(); } catch {}
+      }
+    }
   }
 
   function updateViewerTransform() {
@@ -3024,8 +3327,16 @@
   }
 
   function closeViewer() {
-    state.viewer?.overlay.remove();
+    const current = state.viewer;
+    if (!current) return;
+    current.overlay.remove();
     state.viewer = null;
+    const prevFocus = current.previousFocus;
+    if (prevFocus && typeof prevFocus.focus === "function" && prevFocus.isConnected) {
+      try { prevFocus.focus({ preventScroll: true }); } catch {
+        try { prevFocus.focus(); } catch {}
+      }
+    }
   }
 
   window.addEventListener("resize", () => {
@@ -3035,8 +3346,12 @@
 
   function showViewer(image) {
     closeMenu();
+    const previousFocus = document.activeElement;
     const overlay = document.createElement("div");
     overlay.className = "ignow-media-viewer";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-label", "Image viewer");
     const panel = document.createElement("section");
     panel.className = "ignow-media-viewer__panel";
     const toolbar = document.createElement("div");
@@ -3109,6 +3424,7 @@
       image: enlarged,
       zoomInput,
       zoomLabel,
+      previousFocus,
       scale: 1,
       fitScale: 1,
       offsetX: 0,
@@ -3129,12 +3445,19 @@
     let dragging = false;
     let startX = 0;
     let startY = 0;
+    const stopDrag = event => {
+      if (!dragging) return;
+      dragging = false;
+      if (event?.pointerId !== undefined) {
+        try { viewport.releasePointerCapture?.(event.pointerId); } catch {}
+      }
+    };
     viewport.addEventListener("pointerdown", event => {
       if (event.button !== 0 || !state.viewer) return;
       dragging = true;
       startX = event.clientX - state.viewer.offsetX;
       startY = event.clientY - state.viewer.offsetY;
-      viewport.setPointerCapture(event.pointerId);
+      try { viewport.setPointerCapture?.(event.pointerId); } catch {}
     });
     viewport.addEventListener("pointermove", event => {
       if (!dragging || !state.viewer) return;
@@ -3142,10 +3465,12 @@
       state.viewer.offsetY = event.clientY - startY;
       updateViewerTransform();
     });
-    viewport.addEventListener("pointerup", event => {
-      dragging = false;
-      viewport.releasePointerCapture?.(event.pointerId);
-    });
+    viewport.addEventListener("pointerup", stopDrag);
+    viewport.addEventListener("pointercancel", stopDrag);
+    viewport.addEventListener("lostpointercapture", () => { dragging = false; });
+    try { close.focus({ preventScroll: true }); } catch {
+      try { close.focus(); } catch {}
+    }
   }
 
   function isMoreControl(element) {
@@ -3245,11 +3570,22 @@
     return state.navIndex < state.navHistory.length - 1;
   }
 
+  let sidebarBtnCache = { back: null, fwd: null, dl: null };
+  let lastSidebarDisabledState = { back: "", fwd: "" };
+
   function updateSidebarBackButtonState() {
-    const backBtn = document.querySelector(".ignow-sidebar-back");
-    if (backBtn) backBtn.setAttribute("aria-disabled", canGoBack() ? "false" : "true");
-    const fwdBtn = document.querySelector(".ignow-sidebar-forward");
-    if (fwdBtn) fwdBtn.setAttribute("aria-disabled", canGoForward() ? "false" : "true");
+    if (!sidebarBtnCache.back?.isConnected) sidebarBtnCache.back = document.querySelector(".ignow-sidebar-back");
+    if (!sidebarBtnCache.fwd?.isConnected) sidebarBtnCache.fwd = document.querySelector(".ignow-sidebar-forward");
+    const backVal = canGoBack() ? "false" : "true";
+    if (sidebarBtnCache.back && lastSidebarDisabledState.back !== backVal) {
+      lastSidebarDisabledState.back = backVal;
+      sidebarBtnCache.back.setAttribute("aria-disabled", backVal);
+    }
+    const fwdVal = canGoForward() ? "false" : "true";
+    if (sidebarBtnCache.fwd && lastSidebarDisabledState.fwd !== fwdVal) {
+      lastSidebarDisabledState.fwd = fwdVal;
+      sidebarBtnCache.fwd.setAttribute("aria-disabled", fwdVal);
+    }
   }
 
   function navigateBack() {
@@ -3388,9 +3724,10 @@
       && mountedMoreInfo
       && mountedMoreInfo.row.isConnected
       && mountedMoreInfo.control.isConnected) {
-      const backBtn = document.querySelector(".ignow-sidebar-back");
-      const fwdBtn = document.querySelector(".ignow-sidebar-forward");
-      const dlBtn = document.querySelector(".ignow-sidebar-downloader");
+      if (!sidebarBtnCache.back?.isConnected) sidebarBtnCache.back = document.querySelector(".ignow-sidebar-back");
+      if (!sidebarBtnCache.fwd?.isConnected) sidebarBtnCache.fwd = document.querySelector(".ignow-sidebar-forward");
+      if (!sidebarBtnCache.dl?.isConnected) sidebarBtnCache.dl = document.querySelector(".ignow-sidebar-downloader");
+      const { back: backBtn, fwd: fwdBtn, dl: dlBtn } = sidebarBtnCache;
       if (backBtn && fwdBtn && dlBtn
         && backBtn.nextElementSibling === mountedMoreInfo.row
         && fwdBtn.nextElementSibling === backBtn
@@ -3626,18 +3963,67 @@
     }
   }, true);
 
-  function installNativeVideoControls(video) {
+  let lazyVideoControlsObserver = null;
+  const observedLazyVideos = typeof WeakSet === "function" ? new WeakSet() : null;
+
+  function isVideoNearViewport(video) {
+    if (!(video instanceof HTMLVideoElement) || !video.isConnected) return false;
+    if (!video.paused || video === state.activeVideo) return true;
+    const rect = video.getBoundingClientRect();
+    const vh = window.innerHeight || 720;
+    return rect.height > 0 && rect.bottom >= -vh && rect.top <= vh * 2;
+  }
+
+  function trackLazyVideoControls(video) {
+    if (!lazyVideoControlsObserver && typeof IntersectionObserver === "function") {
+      lazyVideoControlsObserver = new IntersectionObserver(entries => {
+        for (let i = 0; i < entries.length; i += 1) {
+          const entry = entries[i];
+          if (!entry.isIntersecting) continue;
+          const target = entry.target;
+          lazyVideoControlsObserver.unobserve(target);
+          if (target instanceof HTMLVideoElement
+            && target.isConnected
+            && target.dataset.ignowNativeControls !== "1") {
+            installNativeVideoControls(target, true);
+          }
+        }
+      }, { rootMargin: "100% 0px" });
+    }
+    if (lazyVideoControlsObserver && observedLazyVideos && !observedLazyVideos.has(video)) {
+      observedLazyVideos.add(video);
+      lazyVideoControlsObserver.observe(video);
+    }
+  }
+
+  function installNativeVideoControls(video, force = false, skipInitialCompactMeasure = false) {
     if (!(video instanceof HTMLVideoElement)) return;
+    if (isGridVideoTile(video) && !isSearchCardVideo(video)) {
+      if (video.paused && video.preload !== "none") video.preload = "none";
+      return;
+    }
     if (video.dataset.ignowNativeControls === "1") {
       applyDefaultVideoAudio(video);
       if (!video.paused && isStandaloneVideo(video)) {
-        if (state.videoAudioUnlocked) activateVideoAudio(video);
-        pauseOtherVideos(video);
+        if (state.videoAudioUnlocked && video.muted && video.dataset.ignowMutedByIgnow !== "1") {
+          activateVideoAudio(video);
+        }
+        if (video !== state.activeVideo) {
+          state.activeVideo = video;
+          pauseOtherVideos(video);
+        }
       }
+      return;
+    }
+    if (!force && !isVideoNearViewport(video)) {
+      trackLazyVideoControls(video);
       return;
     }
     const host = video.parentElement;
     if (!host) return;
+
+    neutralizeLinuxVideoBackdropBlur(video);
+    scheduleLinuxBlurScan();
 
     video.dataset.ignowNativeControls = "1";
     video.controls = false;
@@ -3752,7 +4138,7 @@
       const shouldCompact = isSearchCardVideo(video) || (width > 0 && width < 380);
       controls.classList.toggle("ignow-video-controls--compact", shouldCompact);
     };
-    updateCompactMode();
+    if (!skipInitialCompactMeasure) updateCompactMode();
 
     const formatVideoTime = seconds => {
       if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
@@ -3805,11 +4191,12 @@
         ? Math.max(0, Math.min(1, video.currentTime / duration))
         : 0;
       const pct = progress * 100;
-      const pctStr = `${pct}%`;
+      const pctStep = Math.round(pct * 2) / 2;
+      const pctStr = `${pctStep}%`;
       const pctInt = String(Math.round(pct));
       if (pctStr !== lastProgressStr) {
         lastProgressStr = pctStr;
-        progressLine.value = String(pct);
+        progressLine.value = String(pctStep);
         progressLine.style.setProperty("--ignow-progress", pctStr);
       }
       if (pctInt !== lastProgressInt) {
@@ -3977,8 +4364,10 @@
       sync();
     };
 
-    host.addEventListener("pointerenter", startSearchHoverPreview);
-    host.addEventListener("pointerleave", stopSearchHoverPreview);
+    const listenerAc = typeof AbortController === "function" ? new AbortController() : null;
+    const sigOpt = listenerAc ? { signal: listenerAc.signal } : undefined;
+    host.addEventListener("pointerenter", startSearchHoverPreview, sigOpt);
+    host.addEventListener("pointerleave", stopSearchHoverPreview, sigOpt);
 
     const toggle = () => {
       state.activeVideo = video;
@@ -3992,7 +4381,16 @@
       else video.pause();
     };
 
-    videoControllers.set(video, { seek: seekBy, toggle, refresh: sync });
+    const teardown = () => {
+      listenerAc?.abort();
+      controls.remove();
+      delete video.dataset.ignowNativeControls;
+      videoControllers.delete(video);
+      observedLazyVideos?.delete(video);
+      if (video.isConnected) trackLazyVideoControls(video);
+    };
+
+    videoControllers.set(video, { seek: seekBy, toggle, refresh: sync, teardown });
     controlActions.set(playButton, toggle);
     controlActions.set(rewindButton, () => {
       state.activeVideo = video;
@@ -4035,14 +4433,30 @@
       event.stopPropagation();
     });
 
-    video.addEventListener("timeupdate", sync);
+    progressLine.addEventListener("input", () => {
+      state.activeVideo = video;
+      seekToFraction(Number(progressLine.value) / 100);
+    }, sigOpt);
+    volumeSlider.addEventListener("input", () => {
+      state.activeVideo = video;
+      try {
+        setVideoVolume(video, Math.max(0, Math.min(1, Number(volumeSlider.value) / 100)));
+        markAudioUserControlled(video);
+        state.videoAudioUnlocked = true;
+      } catch (error) {
+        console.warn("IG-Now could not set the video volume:", error);
+      }
+      syncVolume();
+    }, sigOpt);
+
+    video.addEventListener("timeupdate", sync, sigOpt);
     video.addEventListener("loadedmetadata", () => {
       resetVideoStateOnSourceChange(video);
       updateCompactMode();
       sync();
-    });
-    video.addEventListener("durationchange", sync);
-    video.addEventListener("playing", updateCompactMode);
+    }, sigOpt);
+    video.addEventListener("durationchange", sync, sigOpt);
+    video.addEventListener("playing", updateCompactMode, sigOpt);
     video.addEventListener("volumechange", () => {
       try {
         if (!state.volumeGuardSuppressed && !isSearchCardVideo(video)) {
@@ -4062,9 +4476,11 @@
         console.warn("IG-Now could not keep the video audio as the user set it:", error);
       }
       syncVolume();
-    });
+    }, sigOpt);
     video.addEventListener("play", () => {
       resetVideoStateOnSourceChange(video);
+      const rect = video.getBoundingClientRect();
+      if (rect.height <= 0) return;
       const isSearchCardHovered = host.matches(":hover") || video.matches(":hover");
       if (isSearchCardVideo(video) && !isSearchCardHovered) {
         video.pause();
@@ -4076,8 +4492,8 @@
       pauseOtherVideos(video);
       state.activeVideo = video;
       sync();
-    });
-    video.addEventListener("pause", sync);
+    }, sigOpt);
+    video.addEventListener("pause", sync, sigOpt);
     syncVolume();
     sync();
   }
@@ -4090,11 +4506,11 @@
     return cx >= sr.left - 8 && cx <= sr.right + 8 && cy >= sr.top - 8 && cy <= sr.bottom + 8;
   }
 
-  function activeStageVideo(stage) {
+  function activeStageVideo(stage, stageRect = null) {
     if (!(stage instanceof Element)) return null;
-    const sr = stage.getBoundingClientRect();
     const videos = Array.from(stage.querySelectorAll("video"));
     if (!videos.length) return null;
+    const sr = stageRect || stage.getBoundingClientRect();
     if (sr.width <= 0 || sr.height <= 0) return videos[0];
     return videos.find(video => isPostVideo(video) && elementInStageViewport(video, sr)) || null;
   }
@@ -4102,8 +4518,9 @@
   function findImageStageHost(image) {
     if (!isPostImage(image)) return null;
     const inPostContainer = Boolean(image.closest("article, [role='dialog']"));
+    if (!inPostContainer && image.closest("a[href]")) return null;
     const imgRect = image.getBoundingClientRect();
-    if (!inPostContainer && (image.closest("a[href]") || imgRect.width < 320 || imgRect.height < 260)) {
+    if (!inPostContainer && (imgRect.width < 320 || imgRect.height < 260)) {
       return null;
     }
 
@@ -4116,10 +4533,10 @@
     // Climb out of wide multi-slide carousel tracks, horizontal scroll wrappers, and
     // nested transform layers into the clipped viewport box (typically `[role="presentation"]`
     // alongside Instagram's Next/Tag controls) so the corner button stays visible onscreen.
+    let sr = stage instanceof Element ? stage.getBoundingClientRect() : null;
     for (let hop = 0; stage instanceof Element && hop < 5; hop += 1) {
       const parent = stage.parentElement;
       if (!parent || parent.matches("article, [role='dialog'], body, html, main, section")) break;
-      const sr = stage.getBoundingClientRect();
       const pr = parent.getBoundingClientRect();
       const horizontalStrip = stage.scrollWidth > stage.clientWidth + 8
         || sr.width > imgRect.width * 1.25;
@@ -4131,13 +4548,14 @@
             || Boolean(parent.querySelector("[aria-label*='Next' i], [aria-label*='Go Back' i]"))));
       if (!horizontalStrip && !clippedViewportWrapper) break;
       stage = parent;
+      sr = pr;
     }
     if (!(stage instanceof Element) || stage.matches("body, html, main, section, header, nav, aside")) {
       return null;
     }
-    if (activeStageVideo(stage)) return null;
-    const stageRect = stage.getBoundingClientRect();
+    const stageRect = sr || stage.getBoundingClientRect();
     if (stageRect.width < 120 || stageRect.height < 120) return null;
+    if (activeStageVideo(stage, stageRect)) return null;
     return stage;
   }
 
@@ -4158,9 +4576,83 @@
     return inViewport || fallbackImage || imgs[0] || null;
   }
 
-  function installNativeImageControls(image) {
+  const mountedImageStages = typeof WeakMap === "function" ? new WeakMap() : null;
+  const offscreenImages = typeof WeakSet === "function" ? new WeakSet() : null;
+  const observedImages = typeof WeakSet === "function" ? new WeakSet() : null;
+  const pendingImages = new Set();
+  const dirtyImageStages = new Set();
+  let imageVisibilityObserver = null;
+  let visibilityScanHook = null;
+
+  function queueImagesInNode(node) {
+    if (!(node instanceof Element)) return;
+    if (node instanceof HTMLImageElement) {
+      pendingImages.add(node);
+      return;
+    }
+    const imgs = node.querySelectorAll?.("img");
+    if (!imgs || !imgs.length) return;
+    for (let i = 0; i < imgs.length; i += 1) {
+      pendingImages.add(imgs[i]);
+    }
+  }
+
+  function markDirtyImageStagesIn(scope) {
+    const root = scope instanceof Element
+      ? (scope.closest("article, [role='dialog']") || scope)
+      : null;
+    if (!root) return;
+    queueImagesInNode(root);
+    const btns = root.querySelectorAll?.(".ignow-image-download-btn");
+    if (!btns || !btns.length) return;
+    for (let i = 0; i < btns.length; i += 1) {
+      if (btns[i].parentElement) dirtyImageStages.add(btns[i].parentElement);
+    }
+  }
+
+  function trackImageVisibility(image) {
+    if (!imageVisibilityObserver && typeof IntersectionObserver === "function") {
+      imageVisibilityObserver = new IntersectionObserver(entries => {
+        let becameVisible = false;
+        for (let i = 0; i < entries.length; i += 1) {
+          const entry = entries[i];
+          if (entry.isIntersecting) {
+            const wasOffscreen = offscreenImages?.has(entry.target);
+            if (wasOffscreen) offscreenImages.delete(entry.target);
+            if (wasOffscreen || !mountedImageStages?.has(entry.target)) {
+              pendingImages.add(entry.target);
+              becameVisible = true;
+            }
+          } else {
+            offscreenImages?.add(entry.target);
+          }
+        }
+        if (becameVisible) visibilityScanHook?.();
+      }, { rootMargin: "300px 10000px" });
+    }
+    if (imageVisibilityObserver && observedImages && !observedImages.has(image)) {
+      observedImages.add(image);
+      imageVisibilityObserver.observe(image);
+    }
+  }
+
+  function installNativeImageControls(image, checkedStages = null) {
     if (!(image instanceof HTMLImageElement)) return;
+    if (image.getAttribute("aria-hidden") === "true" || image.src?.startsWith("data:")) return;
+    if (image.naturalWidth > 0 && (image.naturalWidth < 120 || image.naturalHeight < 120)) return;
+    if (image.parentElement?.classList?.contains("ignow-video-host")) return;
     if (image.closest("header, nav, aside, .ignow-video-controls, .ignow-media-viewer, #__ignow_about")) return;
+    if (!image.closest("article, [role='dialog']") && image.closest("a[href]")) return;
+    trackImageVisibility(image);
+    if (offscreenImages?.has(image)) return;
+
+    const mounted = mountedImageStages?.get(image);
+    if (mounted && mounted.stage.isConnected && mounted.btn.isConnected && mounted.btn.parentElement === mounted.stage) {
+      if (!checkedStages || checkedStages.has(mounted.stage)) return;
+      checkedStages.add(mounted.stage);
+      return;
+    }
+
     const stage = findImageStageHost(image);
     if (!stage) return;
     const stageRect = stage.getBoundingClientRect();
@@ -4187,6 +4679,8 @@
     }
 
     btn.classList.toggle("ignow-image-download-btn--lifted", hasBottomRightNativeButton(stage, stageRect));
+    mountedImageStages?.set(image, { stage, btn });
+    checkedStages?.add(stage);
     controlActions.set(btn, () => {
       const targetImg = activeStageImage(stage, image);
       const postUrl = postUrlForMedia(targetImg) || normalizeInstagramPostUrl(window.location.href) || "";
@@ -4194,28 +4688,236 @@
     });
   }
 
+  const linuxPerfRuleCount = typeof WeakMap === "function" ? new WeakMap() : null;
+  let linuxPerfStyleEl = null;
+  let linuxBlurScanTimer = null;
+  let linuxBlurLoadHooked = false;
+  let lastCheckedStyleSignature = "";
+
+  function linuxStyleSheetSignature(sheets) {
+    if (!sheets || !sheets.length) return "0";
+    let total = 0;
+    for (let i = 0; i < sheets.length; i += 1) {
+      const s = sheets[i];
+      if (!s || s.ownerNode === style || s.ownerNode === linuxPerfStyleEl) continue;
+      try {
+        total += s.cssRules?.length || 0;
+      } catch {
+        // Ignore cross-origin stylesheets.
+      }
+    }
+    return `${sheets.length}:${total}`;
+  }
+
+  function isLinuxWebKitRuntime() {
+    return /Linux/i.test(String(navigator?.platform || ""))
+      && !/(?:Chrome|Chromium|Edg)\//i.test(String(navigator?.userAgent || ""));
+  }
+
+  function ensureLinuxPerfBaseStyle() {
+    if (!isLinuxWebKitRuntime()) return null;
+    const targetParent = document.head || document.documentElement;
+    if (!targetParent) return null;
+    if (!linuxPerfStyleEl || !linuxPerfStyleEl.isConnected) {
+      linuxPerfStyleEl = document.getElementById("__ignow-linux-perf");
+      if (!linuxPerfStyleEl) {
+        linuxPerfStyleEl = document.createElement("style");
+        linuxPerfStyleEl.id = "__ignow-linux-perf";
+        linuxPerfStyleEl.textContent =
+          ".ignow-media-viewer { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; background: rgba(0, 0, 0, 0.9) !important; }\n" +
+          ".ignow-video-controls button, .ignow-video-controls__time { text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9) !important; }\n" +
+          ".ignow-video-controls__progress, .ignow-video-controls__volume-slider, .ignow-image-download-btn { box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55) !important; }\n" +
+          ".ignow-video-controls__progress::-webkit-slider-thumb, .ignow-video-controls__volume-slider::-webkit-slider-thumb { box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55) !important; }\n" +
+          ".ignow-video-controls__progress::-moz-range-thumb { box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55) !important; }\n" +
+          "video ~ img[aria-hidden='true'], .ignow-linux-no-blur { filter: none !important; -webkit-filter: none !important; opacity: 0.14 !important; }\n";
+        targetParent.appendChild(linuxPerfStyleEl);
+      }
+    }
+    return linuxPerfStyleEl;
+  }
+
+  function neutralizeLinuxVideoBackdropBlur(video) {
+    if (!isLinuxWebKitRuntime() || !(video instanceof HTMLVideoElement)) return;
+    const stage = video.parentElement?.parentElement || video.parentElement;
+    if (!stage) return;
+    const hiddenImgs = stage.querySelectorAll("img[aria-hidden='true']");
+    for (let i = 0; i < hiddenImgs.length; i += 1) {
+      hiddenImgs[i].classList.add("ignow-linux-no-blur");
+    }
+  }
+
+  function scheduleLinuxBlurScan(force = false) {
+    if (!isLinuxWebKitRuntime()) return;
+    const sheets = document.styleSheets;
+    const sig = linuxStyleSheetSignature(sheets);
+    if (!force && document.readyState === "complete" && lastCheckedStyleSignature === sig && linuxBlurScanTimer === null) {
+      return;
+    }
+    if (document.readyState === "complete") {
+      syncLinuxBlurMitigation();
+      return;
+    }
+    let totalRules = 0;
+    if (sheets) {
+      for (let i = 0; i < sheets.length; i += 1) {
+        const s = sheets[i];
+        if (!s || s.ownerNode === style || s.ownerNode === linuxPerfStyleEl) continue;
+        try {
+          totalRules += s.cssRules?.length || 0;
+        } catch {
+          // Ignore cross-origin stylesheets.
+        }
+        if (totalRules > 200) break;
+      }
+    }
+    if (totalRules > 0 && totalRules <= 200) {
+      syncLinuxBlurMitigation();
+      return;
+    }
+    if (!linuxBlurLoadHooked) {
+      linuxBlurLoadHooked = true;
+      window.addEventListener("load", () => syncLinuxBlurMitigation(), { once: true });
+    }
+  }
+
+  // On Linux WebKitGTK (Skia + software/DMABUF-disabled compositing), CSS blur()
+  // and backdrop-filter: blur() layered over active <video> elements (e.g., Reels
+  // ambient 140px blurred thumbnail) trigger CPU SkBlurEngine passes on the main
+  // thread every frame, dropping playback to ~6-10 FPS. Neutralize blur filters
+  // incrementally as stylesheets load or grow via insertRule() without altering
+  // non-blur filters (brightness/invert), deferred off cold startup.
+  function syncLinuxBlurMitigation() {
+    const perfEl = ensureLinuxPerfBaseStyle();
+    if (!perfEl) return;
+    const sheets = document.styleSheets;
+    if (!sheets || !sheets.length) return;
+    const chunks = [];
+    const scanRules = (rules, startIdx = 0, maxCount = Infinity) => {
+      if (!rules) return startIdx;
+      const limit = Math.min(rules.length, startIdx + maxCount);
+      for (let i = startIdx; i < limit; i += 1) {
+        const rule = rules[i];
+        const styleObj = rule.style;
+        const selector = rule.selectorText;
+        if (styleObj && selector) {
+          const filterVal = String(
+            styleObj.getPropertyValue?.("filter")
+            || styleObj.filter
+            || styleObj.getPropertyValue?.("-webkit-filter")
+            || styleObj.webkitFilter
+            || ""
+          );
+          const backdropVal = String(
+            styleObj.getPropertyValue?.("backdrop-filter")
+            || styleObj.backdropFilter
+            || styleObj.getPropertyValue?.("-webkit-backdrop-filter")
+            || styleObj.webkitBackdropFilter
+            || ""
+          );
+          if (/(?:blur\s*\(|url\s*\(#)/i.test(filterVal)) {
+            const isLargeBgBlur = /blur\s*\(\s*(?:[4-9]\d|\d{3,})/i.test(filterVal);
+            chunks.push(`${selector} { filter: none !important; -webkit-filter: none !important;${isLargeBgBlur ? " opacity: 0.14 !important;" : ""} }`);
+          }
+          if (/blur\s*\(/i.test(backdropVal)) {
+            chunks.push(`${selector} { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }`);
+          }
+        }
+        if (rule.cssRules?.length) {
+          scanRules(rule.cssRules, 0, Infinity);
+        }
+      }
+      return limit;
+    };
+    let hasMoreDeferred = false;
+    for (let sIdx = 0; sIdx < sheets.length; sIdx += 1) {
+      const sheet = sheets[sIdx];
+      if (!sheet || sheet.ownerNode === style || sheet.ownerNode === perfEl) continue;
+      let rules = null;
+      try {
+        rules = sheet.cssRules;
+      } catch {
+        continue;
+      }
+      if (!rules) continue;
+      const prevLen = linuxPerfRuleCount?.get(sheet) || 0;
+      if (rules.length <= prevLen) continue;
+      const nextIdx = scanRules(rules, prevLen, 2000);
+      linuxPerfRuleCount?.set(sheet, nextIdx);
+      if (nextIdx < rules.length) hasMoreDeferred = true;
+    }
+    if (chunks.length) {
+      perfEl.appendChild(document.createTextNode("\n" + chunks.join("\n") + "\n"));
+    }
+    if (!hasMoreDeferred) {
+      lastCheckedStyleSignature = linuxStyleSheetSignature(sheets);
+    }
+    if (hasMoreDeferred && linuxBlurScanTimer === null) {
+      const runNext = () => {
+        linuxBlurScanTimer = null;
+        syncLinuxBlurMitigation();
+      };
+      if (typeof window.requestIdleCallback === "function") {
+        linuxBlurScanTimer = window.requestIdleCallback(runNext, { timeout: 250 });
+      } else {
+        linuxBlurScanTimer = window.setTimeout(runNext, 16);
+      }
+    }
+  }
+
   function scanVideos() {
-    document.querySelectorAll("video").forEach(installNativeVideoControls);
+    ensureLinuxPerfBaseStyle();
+    scheduleLinuxBlurScan();
+    if (state.activeVideo && !state.activeVideo.isConnected) state.activeVideo = null;
+    if (_ignowPlayingVideo && !_ignowPlayingVideo.isConnected) _ignowPlayingVideo = null;
+    if (_ignowPlayingAudio && !_ignowPlayingAudio.isConnected) _ignowPlayingAudio = null;
+    if (_ignowMutedVideo && !_ignowMutedVideo.isConnected) _ignowMutedVideo = null;
+    document.querySelectorAll("video").forEach(v => installNativeVideoControls(v, false));
+    capOffscreenVideos(state.activeVideo);
+    const checkedStages = new Set();
     document.querySelectorAll(".ignow-image-download-btn").forEach(btn => {
       const stage = btn.parentElement;
-      if (!stage || activeStageVideo(stage) || !activeStageImage(stage, null)) btn.remove();
+      if (!stage || !stage.isConnected) {
+        btn.remove();
+        return;
+      }
+      if (!dirtyImageStages.has(stage)) {
+        checkedStages.add(stage);
+        return;
+      }
+      const sr = stage.getBoundingClientRect();
+      if (activeStageVideo(stage, sr) || !activeStageImage(stage, null, sr)) {
+        btn.remove();
+      } else {
+        checkedStages.add(stage);
+      }
     });
-    document.querySelectorAll("img").forEach(installNativeImageControls);
+    dirtyImageStages.clear();
+    if (pendingImages.size) {
+      const batch = Array.from(pendingImages);
+      pendingImages.clear();
+      for (let i = 0; i < batch.length; i += 1) {
+        if (batch[i].isConnected) installNativeImageControls(batch[i], checkedStages);
+      }
+    }
     installSidebarBackButton(false);
   }
 
   function installNetworkMediaObserver() {
+    const shouldInspectUrl = url => /\/(?:api\/v1\/|api\/graphql|graphql)/i.test(url)
+      && !/\/(?:logging_client_events|bulk-route-definitions|ads\/|direct_v2\/inbox|news\/inbox|presence|qp\/batch|fxcal|bloks|web_info)/i.test(url);
     if (typeof window.fetch === "function") {
       const originalFetch = window.fetch;
       window.fetch = function (...args) {
         const pending = originalFetch.apply(this, args);
         Promise.resolve(pending).then(response => {
           const url = String(response?.url || "");
-          if (!/\/(?:api\/v1\/|api\/graphql|graphql)/i.test(url)) return;
+          if (!shouldInspectUrl(url)) return;
           const contentType = String(response.headers?.get?.("content-type") || "");
           if (contentType && !/json|text|javascript/i.test(contentType)) return;
-          if (Number(response.headers?.get?.("content-length")) > 4 * 1024 * 1024) return;
-          response.clone?.().text?.().then(text => extractBundlesFromJsonText(text, "", true)).catch(() => {});
+          if (Number(response.headers?.get?.("content-length")) > 2 * 1024 * 1024) return;
+          response.clone?.().text?.().then(text => {
+            if (text && text.length <= 2 * 1024 * 1024) queueNetworkPayload("text", text);
+          }).catch(() => {});
         }).catch(() => {});
         return pending;
       };
@@ -4227,12 +4929,12 @@
         if (!xhrUrls.has(this)) {
           this.addEventListener("load", () => {
             const reqUrl = String(xhrUrls.get(this) || "");
-            if (!/\/(?:api\/v1\/|api\/graphql|graphql)/i.test(reqUrl)) return;
+            if (!shouldInspectUrl(reqUrl)) return;
             try {
               if (this.responseType === "json") {
-                if (this.response && typeof this.response === "object") cacheBundlesFromPayload(this.response);
+                if (this.response && typeof this.response === "object") queueNetworkPayload("obj", this.response);
               } else {
-                extractBundlesFromJsonText(this.responseText, "", true);
+                queueNetworkPayload("text", this.responseText);
               }
             } catch {
               // Ignore non-JSON responses.
@@ -4273,72 +4975,186 @@
     });
   }
 
+  const detachedVideosPending = new Set();
+  let detachedVideoCleanupTimer = null;
+
+  function queueDetachedVideosInNode(node) {
+    if (!isLinuxWebKitRuntime() || !(node instanceof Element)) return;
+    if (node instanceof HTMLVideoElement) {
+      detachedVideosPending.add(node);
+    } else {
+      const videos = node.querySelectorAll?.("video");
+      if (!videos || !videos.length) return;
+      for (let i = 0; i < videos.length; i += 1) {
+        detachedVideosPending.add(videos[i]);
+      }
+    }
+    if (detachedVideoCleanupTimer !== null) return;
+    detachedVideoCleanupTimer = window.setTimeout(() => {
+      detachedVideoCleanupTimer = null;
+      const batch = Array.from(detachedVideosPending);
+      detachedVideosPending.clear();
+      for (let i = 0; i < batch.length; i += 1) {
+        const v = batch[i];
+        if (v.isConnected) continue;
+        try {
+          if (!v.paused) v.pause();
+          if (v.srcObject) v.srcObject = null;
+          if (v.hasAttribute("src") || v.currentSrc) {
+            v.removeAttribute("src");
+            v.load();
+          }
+        } catch {
+          // Ignore teardown errors on already-disposed media elements.
+        }
+      }
+    }, 150);
+  }
+
   function observeVideoChanges() {
     if (!document.documentElement) return;
     installNetworkMediaObserver();
+    queueImagesInNode(document.documentElement);
     scanVideos();
 
     let scanTimer = null;
+    let scrollScanDueAt = 0;
+    const runScheduledScan = () => {
+      scanTimer = null;
+      scrollScanDueAt = 0;
+      scanVideos();
+    };
     const scheduleScan = (delay = 120) => {
       if (scanTimer !== null) return;
       const ms = typeof delay === "number" && delay >= 0 ? delay : 120;
-      scanTimer = window.setTimeout(() => {
-        scanTimer = null;
-        scanVideos();
-      }, ms);
+      scanTimer = window.setTimeout(runScheduledScan, ms);
     };
+    scheduleScanRef = scheduleScan;
+    const scheduleScrollScan = () => {
+      markReelScrolling();
+      const now = Date.now();
+      const idleDelay = 120;
+      const maxDelay = isLinuxWebKitRuntime() ? 550 : 350;
+      if (!scrollScanDueAt) scrollScanDueAt = now + maxDelay;
+      if (now >= scrollScanDueAt) {
+        if (scanTimer !== null) {
+          window.clearTimeout(scanTimer);
+          scanTimer = null;
+        }
+        runScheduledScan();
+        return;
+      }
+      if (scanTimer !== null) window.clearTimeout(scanTimer);
+      scanTimer = window.setTimeout(runScheduledScan, Math.min(idleDelay, Math.max(16, scrollScanDueAt - now)));
+    };
+    visibilityScanHook = () => scheduleScan(16);
     let lastRoute = window.location.href;
     installHistoryHooks(route => {
       if (route) lastRoute = route;
-      mountedMoreInfo = null;
-      scheduleScan();
+      scheduleScan(16);
     });
 
     const isOwnNode = node => node instanceof Element
       && Boolean(
         node.closest?.(".ignow-sidebar-back, .ignow-sidebar-forward, .ignow-sidebar-downloader, .ignow-sidebar-floating-nav, .ignow-video-controls, .ignow-image-download-btn, .ignow-media-menu, .ignow-toast, .ignow-media-viewer")
       );
+    const hasRelevantSubtree = node => node instanceof Element
+      && !isOwnNode(node)
+      && (mountedMoreInfo === null
+        || node.matches?.("video, img, article, nav, [role='dialog'], [role='navigation'], [data-ignow-sidebar]")
+        || Boolean(node.querySelector?.("video, img, [role='dialog'], [role='navigation'], nav")));
 
     new MutationObserver(mutations => {
-      const relevant = mutations.some(mutation => {
-        if (isOwnNode(mutation.target)) return false;
+      let hasNewVideo = false;
+      let relevant = false;
+      for (let m = 0; m < mutations.length; m += 1) {
+        const mutation = mutations[m];
+        if (isOwnNode(mutation.target)) continue;
         if (mutation.type === "attributes") {
-          return mutation.target instanceof Element && !mutation.target.closest?.("video, audio");
+          const t = mutation.target;
+          if (t instanceof Element
+            && !t.closest?.("video, audio, svg, button")
+            && (t instanceof HTMLImageElement
+              || t.closest?.("article, [role='dialog']")
+              || t.querySelector?.(".ignow-image-download-btn"))) {
+            markDirtyImageStagesIn(t);
+            relevant = true;
+          }
+          continue;
         }
-        if (mutation.type !== "childList") return false;
-        const addedExternal = Array.from(mutation.addedNodes).some(node => node instanceof Element && !isOwnNode(node));
-        const removedExternalOrSidebar = Array.from(mutation.removedNodes).some(node => node instanceof Element
-          && (!isOwnNode(node) || node.matches?.(".ignow-sidebar-back, .ignow-sidebar-forward, .ignow-sidebar-downloader")));
-        return addedExternal || removedExternalOrSidebar;
-      });
-      if (relevant) scheduleScan();
+        if (mutation.type !== "childList") continue;
+        for (let i = 0; i < mutation.addedNodes.length; i += 1) {
+          const node = mutation.addedNodes[i];
+          if (node instanceof Element && (node.tagName === "STYLE" || (node.tagName === "LINK" && node.rel?.toLowerCase() === "stylesheet"))) {
+            scheduleLinuxBlurScan(true);
+          }
+          if (!hasRelevantSubtree(node)) continue;
+          relevant = true;
+          queueImagesInNode(node);
+          if (node.matches?.("video") || node.querySelector?.("video")) {
+            hasNewVideo = true;
+            markDirtyImageStagesIn(node.parentElement || mutation.target);
+          }
+        }
+        for (let i = 0; i < mutation.removedNodes.length; i += 1) {
+          const node = mutation.removedNodes[i];
+          if (!(node instanceof Element)) continue;
+          if (node.matches?.(".ignow-sidebar-back, .ignow-sidebar-forward, .ignow-sidebar-downloader")) {
+            relevant = true;
+          } else if (!isOwnNode(node) && (node.matches?.("video, img, [role='dialog']") || node.querySelector?.("video, img"))) {
+            relevant = true;
+            markDirtyImageStagesIn(mutation.target);
+            queueDetachedVideosInNode(node);
+          }
+        }
+      }
+      if (relevant) scheduleScan(hasNewVideo ? 16 : 120);
     }).observe(document.documentElement, {
       childList: true,
       subtree: true,
       attributes: true,
       attributeFilter: ["hidden", "aria-hidden"]
     });
-    window.addEventListener("scroll", () => scheduleScan(120), { capture: true, passive: true });
+    const ensureLazyControlsOnPlayback = event => {
+      const target = event.target;
+      if (!(target instanceof HTMLVideoElement)) return;
+      if (target.dataset.ignowNativeControls === "1") return;
+      if (isGridVideoTile(target) && !isSearchCardVideo(target)) return;
+      const immediate = event.type === "play" || event.type === "playing";
+      if (!immediate && !isVideoNearViewport(target)) return;
+      installNativeVideoControls(target, true, event.type === "play");
+    };
+    document.addEventListener("play", ensureLazyControlsOnPlayback, true);
+    document.addEventListener("playing", ensureLazyControlsOnPlayback, true);
+    document.addEventListener("canplay", ensureLazyControlsOnPlayback, true);
+    document.addEventListener("loadeddata", ensureLazyControlsOnPlayback, true);
+    window.addEventListener("wheel", markReelScrolling, { capture: true, passive: true });
+    window.addEventListener("scroll", scheduleScrollScan, { capture: true, passive: true });
+    window.addEventListener("hashchange", () => scheduleScan(16));
     document.addEventListener("transitionend", event => {
-      if (!isOwnNode(event.target)) scheduleScan();
+      if (event.propertyName !== "transform") return;
+      const target = elementFromTarget(event.target);
+      if (!target || isOwnNode(target)) return;
+      if (target.closest("ul, [role='presentation']") || target.querySelector?.("img, video")) {
+        markDirtyImageStagesIn(target);
+        scheduleScan();
+      }
     }, { capture: true, passive: true });
     document.addEventListener("click", event => {
       const navBtn = elementFromTarget(event.target)?.closest?.("[aria-label*='Next' i], [aria-label*='Go Back' i], [aria-label*='Previous' i]");
       if (navBtn && !navBtn.closest(".ignow-video-controls, .ignow-sidebar-back, .ignow-sidebar-forward")) {
+        markDirtyImageStagesIn(navBtn);
         scheduleScan(160);
       }
     }, true);
     document.addEventListener("load", event => {
-      if (event.target instanceof HTMLImageElement) scheduleScan();
+      if (event.target instanceof HTMLImageElement) {
+        pendingImages.add(event.target);
+        scheduleScan();
+      } else if (event.target instanceof HTMLLinkElement && event.target.rel?.toLowerCase() === "stylesheet") {
+        scheduleLinuxBlurScan(true);
+      }
     }, true);
-    window.setInterval(() => {
-      const currentRoute = window.location.href;
-      if (currentRoute === lastRoute) return;
-      lastRoute = currentRoute;
-      mountedMoreInfo = null;
-      recordNavUrl(currentRoute, false);
-      scheduleScan();
-    }, 500);
   }
 
   window.__ignowTools = {
@@ -4462,7 +5278,7 @@
       const videos = Array.from(document.querySelectorAll("video"));
       let unmutedCount = 0;
       for (const v of videos) {
-        if (!v.isConnected || isSearchCardVideo(v)) continue;
+        if (!v.isConnected || v.paused || isSearchCardVideo(v) || v === _ignowMutedVideo) continue;
         if (v.dataset.ignowMutedByIgnow === "1") continue;
         if (v.dataset.ignowAudioUserActivated === "1" && v.volume <= 0.005) continue;
         const onScreen = !v.paused || (isVisible(v) && isVideoOnScreen(v));
@@ -4472,7 +5288,7 @@
         }
       }
       if (_ignowMutedVideo && _ignowMutedVideo.isConnected && _ignowMutedVideo.dataset.ignowMutedByIgnow !== "1") {
-        setMediaMuteSynced(_ignowMutedVideo, false, false);
+        setMediaMuteSynced(_ignowMutedVideo, _ignowMutedByHide, false);
         _ignowMutedVideo = null;
         _ignowMutedByHide = false;
       }

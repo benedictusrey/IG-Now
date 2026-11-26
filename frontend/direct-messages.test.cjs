@@ -49,5 +49,53 @@ test('outer DM scroll fix follows routes and keeps native unread reports dedupli
     assert(f.win.document.documentElement.classList.contains('ignow-direct-page'));
     f.win.history.pushState({}, '', '/reels/'); await wait();
     assert(!f.win.document.documentElement.classList.contains('ignow-direct-page'));
+    // Outside /direct/, text-node characterData mutations (e.g. Reel timer ticks) must not trigger observer work.
+    const before = f.timers();
+    const timerText = f.win.document.createTextNode('0:01');
+    f.win.document.body.appendChild(timerText);
+    await wait();
+    const afterAppend = f.timers();
+    timerText.data = '0:02';
+    await wait();
+    assert.equal(f.timers(), afterAppend, 'characterData outside /direct/ must not schedule DM render');
+    assert(afterAppend >= before);
   } finally { f.win.dispatchEvent(new f.win.Event('pagehide')); f.dom.window.close(); }
+});
+test('top-frame guard skips embedded iframe initialization', () => {
+  const dom = new JSDOM('<!doctype html><html><body><iframe></iframe></body></html>', {
+    url: 'https://www.instagram.com/', runScripts: 'outside-only'
+  });
+  try {
+    const iframeWin = dom.window.document.querySelector('iframe').contentWindow;
+    iframeWin.eval(source);
+    assert.equal(iframeWin.__ignowDirectMessagesInstalled, undefined);
+  } finally { dom.window.close(); }
+});
+test('DM MutationObserver stays disconnected outside /direct/ once inboxCount is known and re-attaches on /direct/', async () => {
+  const dom = new JSDOM('<a href="/direct/inbox/"><span id="badge">2</span></a><main></main>', {
+    url: 'https://www.instagram.com/', runScripts: 'outside-only'
+  });
+  const win = dom.window;
+  let timers = 0;
+  const realTimeout = win.setTimeout.bind(win);
+  win.setTimeout = (cb, delay) => {
+    if (delay < 5000) timers++;
+    return realTimeout(cb, delay === 5000 ? 15 : delay);
+  };
+  win.__TAURI__ = { core: { invoke: async () => {} } };
+  win.fetch = async () => ({ ok: true, url: 'https://www.instagram.com/api/v1/direct_v2/inbox/?limit=20', headers: { get: () => null }, json: async () => ({ inbox: { unseen_count: 5 } }) });
+  try {
+    win.eval(source);
+    await wait();
+    const before = timers;
+    const div = win.document.createElement('div');
+    div.textContent = 'feed update';
+    win.document.querySelector('main').appendChild(div);
+    await wait();
+    assert.equal(timers, before, 'outside /direct/ with inboxCount known, DOM mutations must not schedule DM render');
+
+    win.history.pushState({}, '', '/direct/t/t1/');
+    await wait();
+    assert(win.document.documentElement.classList.contains('ignow-direct-page'));
+  } finally { win.dispatchEvent(new win.Event('pagehide')); dom.window.close(); }
 });

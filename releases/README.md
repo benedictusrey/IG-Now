@@ -28,7 +28,8 @@ releases/
 
 | Version | Date | Status | Highlights |
 | --- | --- | --- | --- |
-| [v2.5.1](https://github.com/benedictusrey/IG-Now/releases/tag/v2.5.1) | 2026-11-25 | Current | Linux Wayland/WebKitGTK freeze fix (issue #6), Wayland window/watchdog hardening, single-pass GraphQL cache & zero-thrash scroll/video performance pass |
+| [v2.5.2](https://github.com/benedictusrey/IG-Now/releases/tag/v2.5.2) | 2026-11-26 | Current | Linux WebKitGTK & Wayland/XWayland performance overhaul (off-route `<video>` cleanup, lazy Reels controls, deferred mute sync, pre-nav `CacheModel::WebBrowser` & DRI3 DMA-BUF probing), Core Audio COM fix, atomic Downloader writes & a11y polish |
+| [v2.5.1](https://github.com/benedictusrey/IG-Now/releases/tag/v2.5.1) | 2026-11-25 | Published | Linux Wayland/WebKitGTK freeze fix (issue #6), Wayland window/watchdog hardening, single-pass GraphQL cache & zero-thrash scroll/video performance pass |
 | [v2.5.0](https://github.com/benedictusrey/IG-Now/releases/tag/v2.5.0) | 2026-11-17 | Published | Built-in native Downloader workbench (`765 × 885`, H.264+AAC `.mp4`, Audio `.m4a`, up-to-20-slide carousels, collab posts & captions), sidebar Downloader/Forward/Back + `Esc` return, `"IG-Now"` foreground audio session + 2-way mute icon sync, `1588 × 1025` centered layout with native IG comments |
 | [v2.2.0](https://github.com/benedictusrey/IG-Now/releases/tag/v2.2.0) | 2026-10-04 | Published | Message notifications, hidden DM links, and DM scrollbar fix |
 | [v2.1.0](https://github.com/benedictusrey/IG-Now/releases/tag/v2.1.0) | 2026-09-21 | Published | Seek bar works on every video, in-overlay volume toggle, 1180 × 1032 work-area window, universal cross-platform CI |
@@ -36,7 +37,7 @@ releases/
 | [v1.0.0](https://github.com/benedictusrey/IG-Now/releases/tag/v1.0.0) | 2026-08-05 | Published | Initial public release |
 
 See [`versions.json`](versions.json) for the same data in structured form, and
-[`../RELEASE_NOTES.md`](../RELEASE_NOTES.md) for v2.5.1 details.
+[`../RELEASE_NOTES.md`](../RELEASE_NOTES.md) for v2.5.2 details.
 
 ## 🧾 Adding a new version
 

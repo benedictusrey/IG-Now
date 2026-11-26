@@ -213,6 +213,8 @@ fn open_instagram_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
     let _ = window.unminimize();
     let _ = window.show();
     let _ = window.set_focus();
+    #[cfg(target_os = "linux")]
+    let _ = window.eval("if (window.__resumeIfNeeded) window.__resumeIfNeeded();");
     Some(window)
 }
 
@@ -356,10 +358,11 @@ const ABOUT_JS: &str = r##"(function() {
   var prevStyle = document.getElementById(STYLE_ID);
   if (prevStyle) prevStyle.remove();
 
+  var isLinuxWebKit = /Linux/i.test(navigator.platform || '') && !/(?:Chrome|Chromium|Edg)\//i.test(navigator.userAgent || '');
   var styleEl = document.createElement('style');
   styleEl.id = STYLE_ID;
   styleEl.textContent =
-    '#' + ID + '{position:fixed;inset:0;background:rgba(6,7,10,0.80);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);' +
+    '#' + ID + '{position:fixed;inset:0;background:' + (isLinuxWebKit ? 'rgba(6,7,10,0.88)' : 'rgba(6,7,10,0.80);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)') + ';' +
     'display:flex;align-items:center;justify-content:center;padding:20px;z-index:2147483647;' +
     'font-family:"Segoe UI Variable Text","Segoe UI",-apple-system,BlinkMacSystemFont,Roboto,sans-serif;opacity:0;transition:opacity 160ms ease;}' +
     '#' + ID + '[data-open="1"]{opacity:1;}' +
@@ -422,6 +425,19 @@ const ABOUT_JS: &str = r##"(function() {
       e.preventDefault();
       e.stopImmediatePropagation();
       close();
+      return;
+    }
+    if (e.key === 'Tab') {
+      var list = card.querySelectorAll('button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])');
+      if (!list.length) return;
+      var first = list[0], last = list[list.length - 1];
+      if (e.shiftKey && (document.activeElement === first || !card.contains(document.activeElement))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     }
   }
   function close() {
@@ -604,6 +620,8 @@ fn toggle_show_hide(app: &AppHandle) {
             let _ = window.unminimize();
             let _ = window.show();
             let _ = window.set_focus();
+            #[cfg(target_os = "linux")]
+            let _ = window.eval("if (window.__resumeIfNeeded) window.__resumeIfNeeded();");
         } else {
             let _ = window.eval("if (window.__onWindowHidden) window.__onWindowHidden();");
             let _ = window.hide();
@@ -702,7 +720,7 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn Error>> {
             "copy_url" => {
                 if let Some(window) = active_instagram(app) {
                     let _ = window.eval(
-                        "(function(){var u=window.location.href,ok=function(){if(window.showToast)window.showToast('Copied page URL to clipboard');},fail=function(){if(window.showToast)window.showToast('Could not copy page URL');};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(u).then(ok).catch(function(){try{var t=document.createElement('textarea');t.value=u;t.style.cssText='position:fixed;opacity:0';document.body.appendChild(t);t.select();var c=document.execCommand('copy');t.remove();c?ok():fail();}catch(e){fail();}});}else{fail();}})();",
+                        "(function(){var u=window.location.href,ok=function(){if(window.showToast)window.showToast('Copied page URL to clipboard');},fail=function(){if(window.showToast)window.showToast('Could not copy page URL');},fallbackCopy=function(){try{var t=document.createElement('textarea');t.value=u;t.style.cssText='position:fixed;opacity:0';document.body.appendChild(t);t.select();var c=document.execCommand('copy');t.remove();c?ok():fail();}catch(e){fail();}};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(u).then(ok).catch(fallbackCopy);}else{fallbackCopy();}})();",
                     );
                 }
             }

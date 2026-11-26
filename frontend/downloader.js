@@ -23,6 +23,7 @@
   const actionsNote = document.getElementById("actions-note");
   const postSummary = document.getElementById("post-summary");
   const engineBadge = document.getElementById("engine-badge");
+  const postSection = document.getElementById("post-section");
   const statusFooter = document.getElementById("status-footer");
   const statusBox = document.getElementById("status-box");
   const statusOpenBtn = document.getElementById("status-open-btn");
@@ -131,11 +132,12 @@
     }
   }
 
-  function setBusy(nextBusy) {
+  function setBusy(nextBusy, mode = "inspect") {
     busy = nextBusy;
     if (statusFooter) statusFooter.setAttribute("data-busy", nextBusy ? "1" : "0");
+    if (postSection) postSection.setAttribute("aria-busy", nextBusy ? "true" : "false");
     inspectBtn.disabled = nextBusy;
-    inspectBtn.textContent = nextBusy ? "Inspecting..." : "Inspect Link";
+    inspectBtn.textContent = nextBusy && mode === "inspect" ? "Inspecting..." : "Inspect Link";
     updateActionButtons();
   }
 
@@ -405,7 +407,7 @@
     if (total > 1) {
       return `Ready: ${total} video items. Viewing Slide ${slideNum} (.mp4).`;
     }
-    return "Ready: 1 item(s) (1 video .mp4). Choose Video (.mp4), Audio Only (.m4a), or Full Post.";
+    return "Ready: 1 video (.mp4). Choose Video (.mp4), Audio Only (.m4a), or Full Post.";
   }
 
   function renderFormatsForSlide(slideIndex) {
@@ -496,7 +498,7 @@
       setStatus("Paste an Instagram Post or Reel URL first.", "warn");
       return;
     }
-    setBusy(true);
+    setBusy(true, "inspect");
     if (previewBox && !previewThumb && previewBox.getAttribute("data-state") !== "ready") {
       previewEmpty.hidden = false;
       setPreviewEmptyMessage("Fetching formats, audio streams, and caption...", "loading");
@@ -689,7 +691,7 @@
       ffmpegAvailable: false,
       items: []
     };
-    setBusy(true);
+    setBusy(true, "save");
     setStatus("Saving caption (.txt) to Downloads/IG-Now...");
     try {
       const savedPath = await invoke("save_caption_file", {
@@ -712,7 +714,7 @@
     const itemIndex = currentSlideIndex();
     const formatId = formatSelect.value || null;
     activeDownloadMode = mode;
-    setBusy(true);
+    setBusy(true, "download");
     if (mode === "audio") {
       setStatus("Extracting Audio Only (.m4a AAC) to Downloads/IG-Now...");
     } else if (mode === "bundle") {

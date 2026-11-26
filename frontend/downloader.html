@@ -265,6 +265,11 @@
       cursor: pointer;
     }
 
+    select option {
+      background: var(--well);
+      color: var(--ink);
+    }
+
     select:disabled,
     input:disabled,
     textarea:disabled {
@@ -620,6 +625,10 @@
       gap: 8px;
     }
 
+    .caption-title-group label.field-label {
+      margin: 0;
+    }
+
     .actions-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -912,7 +921,7 @@
         <div class="caption-col">
           <div class="caption-header">
             <div class="caption-title-group">
-              <label class="field-label" for="caption-input" style="margin: 0;">Caption (.txt)</label>
+              <label class="field-label" for="caption-input">Caption (.txt)</label>
               <span class="field-hint" id="caption-count">0 chars</span>
             </div>
             <div class="row">

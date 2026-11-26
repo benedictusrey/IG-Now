@@ -4,6 +4,22 @@ All notable changes to **IG-Now** are documented here. The format follows [Keep 
 
 ---
 
+## [2.5.2] — 2026-11-26
+
+### Fixed
+- **Linux Off-Route & Detached `<video>` Pipeline Leaks (`frontend/instagram-tools.js`):** Fixed `capOffscreenVideos()` so hidden/off-route `rect.height <= 0` videos outside `[role='dialog']` are paused, lowered to `preload="none"`, and unloaded even when `videos.length <= 3`, and added Linux-only `queueDetachedVideosInNode()` teardown (`pause()`, `srcObject = null`, `removeAttribute("src")`, `load()`) for unmounted route trees — cutting Arch WSLg multi-route Reels entry memory/decoders from `2,191 MB / 448 threads` down to `963–1,032 MB / 62–99 threads`.
+- **Reel-to-Reel Scroll Transition Stutters (`frontend/instagram-tools.js`):** Stopped pre-mounting 10-node `.ignow-video-controls` bars on far-offscreen Reels (`isVideoNearViewport`, `IntersectionObserver`, playback capture hooks, Linux far-offscreen `teardown()`), and deferred automatic post-scroll native mute-button `.click()` calls via `scheduleNativeMuteSync()` while keeping explicit user clicks synchronous.
+- **Linux Minimize/Tray Resume & Pre-Hide Mute Preservation (`src-tauri/src/lib.rs`, `src-tauri/src/tray.rs`, `frontend/instagram-tools.js`):** Invoked `window.__resumeIfNeeded()` on Linux `WindowEvent::Focused(true)` and `open_instagram_window()` after removing the permanent `800 ms` watchdog polling loop on Linux, and fixed `__ignowEnsureForegroundAudio` to skip `_ignowMutedVideo` and restore `_ignowMutedByHide`.
+- **Windows Core Audio COM Apartment Lifetime (`src-tauri/src/audio.rs`):** Moved `CoInitializeEx`/`CoUninitialize` lifetime into `Drop for AudioSessionKeepAlive` so COM proxies (`handles`) are always released before `CoUninitialize()`.
+- **Downloader Atomicity, Same-FS Remux & Curl Protocol Hardening (`src-tauri/src/downloader.rs`, `src-tauri/src/lib.rs`):** Added `unique_temp_media_path_near()` and `replace_file_atomically()` (safe backup/rollback preventing cross-device `EXDEV` copies or data loss on failure), fixed `temp_fb` cleanup when FFmpeg audio repair errors, and restricted `curl` helpers with `--proto =http,https --proto-redir =http,https --max-redirs 5`.
+
+### Changed & Optimized
+- **Linux Graphics Auto-Detection & Pre-Navigation WebKitGTK Setup (`src-tauri/src/main.rs`, `src-tauri/src/lib.rs`, `src-tauri/Cargo.toml`):** Route Wayland sessions with `DISPLAY` through XWayland (`GDK_BACKEND=x11`), probe DRI3 (`x11_supports_dri3`) and `/dev/dri/renderD*` nodes to keep native WebKitGTK DMA-BUF enabled on capable Mesa GPUs while falling back safely on WSLg/NVIDIA/no-render-node/no-DRI3 with NVDEC demotion, `WEBKIT_SKIA_CPU_PAINTING_THREADS`, and `WEBKIT_FORCE_VBLANK_TIMER=1`. Boot Linux on `about:blank` to configure `CacheModel::WebBrowser`, smooth scrolling, and `HardwareAccelerationPolicy::Always` before loading `instagram.com`, and narrow `tokio` features in `Cargo.toml`.
+- **CSSOM Blur Neutralization & Observer Scoping (`frontend/instagram-tools.js`, `frontend/direct-messages.js`):** Replaced generic `div:has(...)` selectors in `#__ignow-linux-perf` with direct `.ignow-linux-no-blur` marking, deferred `>200`-rule stylesheet scans to `load`/`requestIdleCallback`, cached `linuxStyleSheetSignature()` across unchanged scrolls, added top-frame/`about:` guards to both injected scripts, moved image button & Explore grid video tracking to `IntersectionObserver` deltas, capped `mediaCache`/`rawNodeCache` at 120 LRU entries, quantized `--ignow-progress` to `0.5%`, and filtered noisy non-media endpoints from `fetch` inspection.
+
+### Accessibility & UX
+- **Keyboard Range Sliders, Focus Rings & Modal/Drag Polish (`frontend/instagram-tools.js`, `src-tauri/src/tray.rs`, `frontend/downloader.html`, `frontend/downloader.js`):** Wired `input` handlers on seek and volume range sliders for keyboard arrow control, cleaned active seeks/pans on window `blur` and `pointercancel`/`lostpointercapture`, restored visible `:focus-visible` outlines, added dialog ARIA + focus restoration + arrow-key menu cycling in image viewer/context menu, disabled `backdrop-filter` and added `Tab` trapping in the Linux About overlay, fixed Tray `"copy_url"` fallback, styled dark `<select>` options, and scoped Downloader `setBusy()` labels + `aria-busy`.
+
 ## [2.5.1] — 2026-11-25
 
 ### Fixed

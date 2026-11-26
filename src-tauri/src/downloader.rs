@@ -8,7 +8,7 @@ use std::{
     process::{Command, Output, Stdio},
     sync::{
         atomic::{AtomicU64, Ordering},
-        Mutex,
+        Mutex, OnceLock,
     },
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -1156,26 +1156,32 @@ fn find_ffmpeg_in_paths_and_candidates(
     candidates.iter().find(|c| c.is_file()).cloned()
 }
 
+static FFMPEG_BIN_CACHE: OnceLock<Option<PathBuf>> = OnceLock::new();
+
 pub fn find_ffmpeg_binary() -> Option<PathBuf> {
-    #[cfg(windows)]
-    let extra = {
-        let mut list = vec![PathBuf::from(
-            r"C:\ProgramData\HP\LCDDisplayHelper\bin\ffmpeg.exe",
-        )];
-        if let Ok(local_app) = env::var("LOCALAPPDATA") {
-            list.push(PathBuf::from(local_app).join(r"Microsoft\WinGet\Links\ffmpeg.exe"));
-        }
-        list
-    };
-    // Finder/GUI launches on macOS/Linux often omit Homebrew/local bin paths from PATH.
-    #[cfg(not(windows))]
-    let extra = vec![
-        PathBuf::from("/opt/homebrew/bin/ffmpeg"),
-        PathBuf::from("/usr/local/bin/ffmpeg"),
-        PathBuf::from("/opt/local/bin/ffmpeg"),
-        PathBuf::from("/usr/bin/ffmpeg"),
-    ];
-    find_ffmpeg_in_paths_and_candidates(env::var_os("PATH").as_deref(), &extra)
+    FFMPEG_BIN_CACHE
+        .get_or_init(|| {
+            #[cfg(windows)]
+            let extra = {
+                let mut list = vec![PathBuf::from(
+                    r"C:\ProgramData\HP\LCDDisplayHelper\bin\ffmpeg.exe",
+                )];
+                if let Ok(local_app) = env::var("LOCALAPPDATA") {
+                    list.push(PathBuf::from(local_app).join(r"Microsoft\WinGet\Links\ffmpeg.exe"));
+                }
+                list
+            };
+            // Finder/GUI launches on macOS/Linux often omit Homebrew/local bin paths from PATH.
+            #[cfg(not(windows))]
+            let extra = vec![
+                PathBuf::from("/opt/homebrew/bin/ffmpeg"),
+                PathBuf::from("/usr/local/bin/ffmpeg"),
+                PathBuf::from("/opt/local/bin/ffmpeg"),
+                PathBuf::from("/usr/bin/ffmpeg"),
+            ];
+            find_ffmpeg_in_paths_and_candidates(env::var_os("PATH").as_deref(), &extra)
+        })
+        .clone()
 }
 
 pub fn mux_video_audio_ffmpeg(
@@ -1258,7 +1264,7 @@ pub fn probe_mp4_audio_state(ffmpeg: &Path, path: &Path) -> Mp4AudioState {
 }
 
 pub fn transcode_mp4_audio_to_aac(ffmpeg: &Path, mp4_path: &Path) -> Result<(), String> {
-    let temp_out = unique_temp_media_path("aacfix", "mp4");
+    let temp_out = unique_temp_media_path_near(mp4_path, "aacfix", "mp4");
     let mut cmd = Command::new(ffmpeg);
     apply_no_window(&mut cmd);
     let output = cmd
@@ -1289,16 +1295,15 @@ pub fn transcode_mp4_audio_to_aac(ffmpeg: &Path, mp4_path: &Path) -> Result<(), 
         let _ = fs::remove_file(&temp_out);
         return Err(format!("ffmpeg AAC conversion exited {}", output.status));
     }
-    let meta = fs::metadata(&temp_out).map_err(|e| e.to_string())?;
+    let meta = fs::metadata(&temp_out).map_err(|e| {
+        let _ = fs::remove_file(&temp_out);
+        e.to_string()
+    })?;
     if meta.len() == 0 {
         let _ = fs::remove_file(&temp_out);
         return Err("ffmpeg AAC conversion produced an empty file.".to_string());
     }
-    let _ = fs::remove_file(mp4_path);
-    if fs::rename(&temp_out, mp4_path).is_err() {
-        fs::copy(&temp_out, mp4_path).map_err(|e| e.to_string())?;
-        let _ = fs::remove_file(&temp_out);
-    }
+    replace_file_atomically(&temp_out, mp4_path)?;
     Ok(())
 }
 
@@ -1365,13 +1370,12 @@ pub fn ensure_mp4_aac_audio(
         }
         Mp4AudioState::Missing => {
             if let Some(aud) = fallback_audio_path {
-                let temp_out = unique_temp_media_path("aacmux", "mp4");
-                mux_video_audio_ffmpeg(ffmpeg, mp4_path, aud, &temp_out)?;
-                let _ = fs::remove_file(mp4_path);
-                if fs::rename(&temp_out, mp4_path).is_err() {
-                    fs::copy(&temp_out, mp4_path).map_err(|e| e.to_string())?;
+                let temp_out = unique_temp_media_path_near(mp4_path, "aacmux", "mp4");
+                if let Err(err) = mux_video_audio_ffmpeg(ffmpeg, mp4_path, aud, &temp_out) {
                     let _ = fs::remove_file(&temp_out);
+                    return Err(err);
                 }
+                replace_file_atomically(&temp_out, mp4_path)?;
                 return Ok(None);
             }
             Ok(Some(
@@ -1572,12 +1576,19 @@ pub fn run_curl_text(
     cmd.args([
         "--fail",
         "--location",
+        "--proto",
+        "=http,https",
+        "--proto-redir",
+        "=http,https",
+        "--max-redirs",
+        "5",
         "--silent",
         "--show-error",
+        "--compressed",
         "--connect-timeout",
-        "15",
+        "8",
         "--max-time",
-        "25",
+        "12",
         "--user-agent",
         DEFAULT_UA,
         "--referer",
@@ -1600,6 +1611,54 @@ pub fn run_curl_text(
         return Err(format!("HTTP error ({url}): {stderr}"));
     }
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+fn json_indicates_multi_item_carousel(value: &Value) -> bool {
+    match value {
+        Value::Object(map) => {
+            if map
+                .get("carousel_media_count")
+                .and_then(|v| v.as_u64())
+                .is_some_and(|n| n > 1)
+                || map.get("media_type").and_then(|v| v.as_u64()) == Some(8)
+            {
+                return true;
+            }
+            map.values().any(json_indicates_multi_item_carousel)
+        }
+        Value::Array(items) => items.iter().any(json_indicates_multi_item_carousel),
+        _ => false,
+    }
+}
+
+pub fn is_complete_seed_post(
+    seed_json: &str,
+    post: &InspectedPost,
+    requested_shortcode: Option<&str>,
+) -> bool {
+    if post.username.trim().is_empty() || post.shortcode.trim().is_empty() || post.items.is_empty()
+    {
+        return false;
+    }
+    if let Some(sc) = requested_shortcode.map(str::trim).filter(|s| !s.is_empty()) {
+        if !post.shortcode.eq_ignore_ascii_case(sc) {
+            return false;
+        }
+    }
+    if post.items.len() <= 1
+        && (seed_json.contains("carousel_media_count") || seed_json.contains("\"media_type\":8"))
+        && serde_json::from_str::<Value>(seed_json)
+            .is_ok_and(|val| json_indicates_multi_item_carousel(&val))
+    {
+        return false;
+    }
+    post.items.iter().all(|item| {
+        !item.formats.is_empty()
+            && item
+                .formats
+                .iter()
+                .all(|fmt| !fmt.video_url.trim().is_empty())
+    })
 }
 
 pub fn inspect_via_http_cascade(
@@ -1708,6 +1767,46 @@ pub fn unique_temp_media_path(tag: &str, ext: &str) -> PathBuf {
         .unwrap_or(0);
     let seq = HASH_SEQ.fetch_add(1, Ordering::Relaxed);
     env::temp_dir().join(format!("ignow-{tag}-{ts}-{seq}.{ext}"))
+}
+
+pub fn unique_temp_media_path_near(target: &Path, tag: &str, ext: &str) -> PathBuf {
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let seq = HASH_SEQ.fetch_add(1, Ordering::Relaxed);
+    let dir = target
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(Path::to_path_buf)
+        .unwrap_or_else(env::temp_dir);
+    dir.join(format!(".ignow-{tag}-{ts}-{seq}.{ext}"))
+}
+
+pub fn replace_file_atomically(temp_path: &Path, target_path: &Path) -> Result<(), String> {
+    if fs::rename(temp_path, target_path).is_ok() {
+        return Ok(());
+    }
+    let backup = unique_temp_media_path_near(target_path, "bak", "tmp");
+    let had_backup = target_path.exists() && fs::rename(target_path, &backup).is_ok();
+    let res = match fs::rename(temp_path, target_path) {
+        Ok(()) => Ok(()),
+        Err(rename_err) => match fs::copy(temp_path, target_path) {
+            Ok(_) => Ok(()),
+            Err(copy_err) => Err(format!(
+                "Failed to replace destination file ({rename_err}; {copy_err})"
+            )),
+        },
+    };
+    let _ = fs::remove_file(temp_path);
+    if res.is_ok() {
+        if had_backup {
+            let _ = fs::remove_file(&backup);
+        }
+    } else if had_backup {
+        let _ = fs::rename(&backup, target_path);
+    }
+    res
 }
 
 #[cfg(test)]
@@ -2212,5 +2311,81 @@ mod tests {
         );
         assert!(text.contains("header = \"X-CSRFToken: csrf_123\""));
         assert_eq!(text.lines().count(), 2);
+    }
+
+    #[test]
+    fn complete_seed_post_accepts_full_seed_and_rejects_sparse_or_unexpanded_carousel() {
+        let full_seed = serde_json::json!({
+            "items": [{
+                "code": "DFullSeed1",
+                "pk": "112233",
+                "user": { "username": "creator" },
+                "video_versions": [
+                    { "url": "https://cdn.instagram.com/v/clip.mp4", "width": 720, "height": 1280 }
+                ]
+            }]
+        })
+        .to_string();
+        let full_post =
+            extract_post_from_json_text(&full_seed, Some("DFullSeed1"), true).expect("full seed");
+        assert!(is_complete_seed_post(
+            &full_seed,
+            &full_post,
+            Some("DFullSeed1")
+        ));
+        assert!(!is_complete_seed_post(
+            &full_seed,
+            &full_post,
+            Some("DOther99")
+        ));
+
+        let mut no_user = full_post.clone();
+        no_user.username.clear();
+        assert!(!is_complete_seed_post(
+            &full_seed,
+            &no_user,
+            Some("DFullSeed1")
+        ));
+
+        let stub_carousel_seed = serde_json::json!({
+            "items": [{
+                "code": "DStubCaro1",
+                "pk": "445566",
+                "user": { "username": "creator" },
+                "carousel_media_count": 4,
+                "image_versions2": {
+                    "candidates": [{ "url": "https://cdn.instagram.com/v/cover.jpg", "width": 1080, "height": 1350 }]
+                }
+            }]
+        })
+        .to_string();
+        let stub_post = extract_post_from_json_text(&stub_carousel_seed, Some("DStubCaro1"), true)
+            .expect("stub carousel seed");
+        assert!(!is_complete_seed_post(
+            &stub_carousel_seed,
+            &stub_post,
+            Some("DStubCaro1")
+        ));
+    }
+
+    #[test]
+    fn replace_file_atomically_replaces_target_and_preserves_original_on_missing_temp() {
+        let target = unique_temp_media_path("atom-target", "mp4");
+        let temp = unique_temp_media_path_near(&target, "atom-src", "mp4");
+        fs::write(&target, b"original-bytes").expect("write target");
+        fs::write(&temp, b"updated-bytes").expect("write temp");
+
+        replace_file_atomically(&temp, &target).expect("atomic replace must succeed");
+        assert_eq!(fs::read(&target).expect("read replaced"), b"updated-bytes");
+        assert!(!temp.exists(), "temp file must be removed after replace");
+
+        let missing_temp = unique_temp_media_path_near(&target, "atom-missing", "mp4");
+        assert!(replace_file_atomically(&missing_temp, &target).is_err());
+        assert_eq!(
+            fs::read(&target).expect("read preserved"),
+            b"updated-bytes",
+            "existing target must be restored if replacement fails"
+        );
+        let _ = fs::remove_file(&target);
     }
 }

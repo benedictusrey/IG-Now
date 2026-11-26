@@ -1188,3 +1188,679 @@ test("scroll scans reuse mounted sidebar row without full-document link queries,
     f.dom.window.close();
   }
 });
+
+test("Linux WebKitGTK neutralizes heavy CSS blur filters, avoids volume-slider drop-shadow filter, and skips aria-hidden decorative images", async () => {
+  const html = `<!doctype html><html><head><style>
+    .bg-blur { filter: blur(140px); }
+    .glass-pill { -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
+    .icon-keep { filter: brightness(0.9) invert(1); }
+  </style></head><body><main>
+    <article>
+      <img class="bg-blur" aria-hidden="true" src="https://cdn.instagram.com/bg.jpg" />
+      <video src="https://cdn.instagram.com/reel.mp4"></video>
+    </article>
+  </main></body></html>`;
+  const dom = new JSDOM(html, {
+    url: "https://www.instagram.com/reels/",
+    pretendToBeVisual: true,
+    runScripts: "dangerously"
+  });
+  const { window } = dom;
+  Object.defineProperty(window.navigator, "platform", { value: "Linux x86_64", configurable: true });
+  Object.defineProperty(window.navigator, "userAgent", {
+    value: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15",
+    configurable: true,
+  });
+  const img = window.document.querySelector("img.bg-blur");
+  Object.defineProperty(img, "naturalWidth", { value: 720, configurable: true });
+  Object.defineProperty(img, "naturalHeight", { value: 1280, configurable: true });
+  setRect(img, { left: 0, top: 0, width: 575, height: 995 });
+  try {
+    window.eval(source);
+    const linuxPerfStyle = window.document.getElementById("__ignow-linux-perf");
+    assert(linuxPerfStyle, "Linux WebKitGTK runtime should install __ignow-linux-perf style");
+    assert.match(linuxPerfStyle.textContent, /\.bg-blur\s*\{[^}]*filter:\s*none\s*!important/);
+    assert.match(linuxPerfStyle.textContent, /\.bg-blur\s*\{[^}]*opacity:\s*0\.14\s*!important/);
+    assert.match(linuxPerfStyle.textContent, /\.glass-pill\s*\{[^}]*backdrop-filter:\s*none\s*!important/);
+    assert.equal(linuxPerfStyle.textContent.includes(".icon-keep"), false, "non-blur filters must stay intact");
+
+    const allStyles = Array.from(window.document.querySelectorAll("style")).map(s => s.textContent).join("\n");
+    const sliderRule = allStyles.match(/\.ignow-video-controls__volume-slider\s*\{[^}]*\}/)?.[0] || "";
+    assert.equal(/filter\s*:/i.test(sliderRule), false, "volume slider must use box-shadow instead of filter: drop-shadow");
+    assert.equal(window.document.querySelectorAll(".ignow-image-download-btn").length, 0, "aria-hidden decorative blur images must not get image download buttons");
+
+    // StyleX dynamic insertRule() into an already-scanned stylesheet must also be caught,
+    // even when WebKit CSS Nesting exposes an empty cssRules list on CSSStyleRule.
+    const dynSheet = window.document.styleSheets[0];
+    dynSheet.insertRule(".late-blur { filter: blur(75px); }", dynSheet.cssRules.length);
+    Object.defineProperty(dynSheet.cssRules[dynSheet.cssRules.length - 1], "cssRules", {
+      value: [],
+      configurable: true
+    });
+    window.dispatchEvent(new window.Event("scroll"));
+    await new Promise(r => setTimeout(r, 150));
+    assert.match(linuxPerfStyle.textContent, /\.late-blur\s*\{[^}]*filter:\s*none\s*!important/);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("Reels navigation dispatches ArrowDown immediately without 220ms lag, caps distant videos, and bounds layout/style reads", async () => {
+  const f = createFixture("/reels/");
+  try {
+    const { win } = f;
+    const doc = win.document;
+    Object.defineProperty(win, "innerHeight", { value: 900, configurable: true });
+    Object.defineProperty(win, "innerWidth", { value: 1200, configurable: true });
+    Object.defineProperty(doc.documentElement, "scrollHeight", { value: 900, configurable: true });
+
+    const main = doc.querySelector("main") || doc.body;
+    // Mount 5 Reels (-2..+2 viewports) and 20 non-audio buttons to verify label-first filtering & caching.
+    const stage = doc.createElement("article");
+    const videos = [];
+    for (let i = 0; i < 5; i++) {
+      const wrap = doc.createElement("div");
+      const v = doc.createElement("video");
+      v.src = `https://cdn.instagram.com/reel-${i}.mp4`;
+      v.preload = "auto";
+      Object.defineProperty(v, "paused", { value: i !== 1, writable: true, configurable: true });
+      v.pause = () => { v.paused = true; };
+      setRect(v, { left: 100, top: (i - 1) * 1000, width: 450, height: 800 });
+      wrap.appendChild(v);
+      stage.appendChild(wrap);
+      videos.push(v);
+    }
+    for (let b = 0; b < 20; b++) {
+      const btn = doc.createElement("button");
+      btn.setAttribute("aria-label", b === 19 ? "Audio is muted" : `Like ${b}`);
+      setRect(btn, { left: 480, top: 700, width: 32, height: 32 });
+      stage.appendChild(btn);
+    }
+    main.appendChild(stage);
+
+    // 1. Trigger scanVideos via scroll -> distant video (#4 at top=3000) is paused & capped to metadata,
+    // while adjacent #0 (top=-1000) and #2 (top=1000) keep their preload intact.
+    win.dispatchEvent(new win.Event("scroll"));
+    await new Promise(r => setTimeout(r, 150));
+    assert.equal(videos[2].preload, "auto", "adjacent +1 Reel keeps pre-buffering");
+    assert.equal(videos[4].preload, "metadata", "distant +3 Reel is capped to metadata");
+
+    // 2. Instrument getComputedStyle & getBoundingClientRect across repeated play + scroll transitions.
+    let gcsCalls = 0;
+    let gbcrCalls = 0;
+    const origGcs = win.getComputedStyle.bind(win);
+    const origGbcr = win.Element.prototype.getBoundingClientRect;
+    win.getComputedStyle = (...args) => { gcsCalls++; return origGcs(...args); };
+    win.Element.prototype.getBoundingClientRect = function () { gbcrCalls++; return origGbcr.apply(this, arguments); };
+
+    videos[1].dispatchEvent(new win.Event("play"));
+    videos[1].dispatchEvent(new win.Event("play"));
+    // Non-transform transitionend must not trigger scanVideos.
+    const opacityEnd = new win.Event("transitionend", { bubbles: true });
+    opacityEnd.propertyName = "opacity";
+    main.dispatchEvent(opacityEnd);
+    await new Promise(r => setTimeout(r, 150));
+
+    assert(gcsCalls <= 4, `expected label-first + cached mute button to bound getComputedStyle (got ${gcsCalls})`);
+    assert(gbcrCalls <= 40, `expected cached stages & filtered transitionend to bound getBoundingClientRect (got ${gbcrCalls})`);
+
+    // 3. Verify navigateReel() via ArrowDown dispatches synthetic ArrowDown immediately (<50ms, no 220ms wait).
+    const dispatched = [];
+    doc.body.addEventListener("keydown", ev => {
+      if (ev.__ignowSyntheticNavigation) dispatched.push(ev.key);
+    });
+    doc.body.dispatchEvent(new win.KeyboardEvent("keydown", { key: "ArrowDown", code: "ArrowDown", bubbles: true, cancelable: true }));
+    assert.deepEqual(dispatched, ["ArrowDown"], "non-scrolling Reels root must dispatch ArrowDown synchronously without 220ms lag");
+  } finally {
+    f.dom.window.close();
+  }
+});
+
+test("Explore grid tiles skip heavy control bars, unload offscreen progressive HTTPS videos, and restore them when scrolled back into view", async () => {
+  const f = createFixture("/explore/");
+  try {
+    const { win } = f;
+    const doc = win.document;
+    const main = doc.querySelector("main") || doc.body;
+
+    // Remove default Reels article from fixture so we test pure Explore grid behavior.
+    main.innerHTML = "";
+    const videos = [];
+    for (let i = 0; i < 6; i++) {
+      const link = doc.createElement("a");
+      link.href = `/p/ExplorePost${i}/`;
+      const v = doc.createElement("video");
+      v.src = `https://cdn.instagram.com/explore-${i}.mp4`;
+      v.preload = "auto";
+      Object.defineProperty(v, "paused", { value: true, writable: true, configurable: true });
+      v.load = () => {};
+      setRect(v, { left: (i % 3) * 300, top: i < 3 ? 100 : 2000, width: 280, height: 280 });
+      link.appendChild(v);
+      main.appendChild(link);
+      videos.push(v);
+    }
+
+    win.dispatchEvent(new win.Event("scroll"));
+    await new Promise(r => setTimeout(r, 160));
+
+    assert.equal(doc.querySelectorAll(".ignow-video-controls").length, 0, "Explore grid link tiles must not inject 10-node video control bars");
+    assert.equal(videos[0].preload, "none", "visible paused Explore grid video must use preload=none");
+    assert.equal(videos[0].getAttribute("src"), "https://cdn.instagram.com/explore-0.mp4", "visible grid video keeps src");
+    assert.equal(videos[4].getAttribute("src"), null, "offscreen progressive grid video must unload src");
+    assert.equal(videos[4].dataset.ignowDeferredSrc, "https://cdn.instagram.com/explore-4.mp4", "offscreen progressive video must stash deferred src");
+
+    // Scroll video 4 back into viewport -> src is restored cleanly.
+    setRect(videos[4], { left: 300, top: 200, width: 280, height: 280 });
+    win.dispatchEvent(new win.Event("scroll"));
+    await new Promise(r => setTimeout(r, 160));
+    assert.equal(videos[4].getAttribute("src"), "https://cdn.instagram.com/explore-4.mp4", "in-view grid video must restore deferred src");
+    assert.equal(videos[4].dataset.ignowDeferredSrc, undefined);
+  } finally {
+    f.dom.window.close();
+  }
+});
+
+test("Route updates preserve sidebar cache, detached activeVideo refs are pruned, activeVideoForKeyboard reads rect once per video, and Linux perf sheet removes control blurs", async () => {
+  const f = createFixture("/reels/StartReel/", {
+    beforeEval: win => {
+      Object.defineProperty(win.navigator, "platform", { value: "Linux x86_64", configurable: true });
+      Object.defineProperty(win.navigator, "userAgent", {
+        value: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+        configurable: true
+      });
+      const moreControl = win.document.querySelector(".more-row [role='button']");
+      if (moreControl) setRect(moreControl, { left: 12, top: 820, width: 220, height: 48 });
+      const sidebar = win.document.querySelector(".sidebar-shell");
+      if (sidebar) setRect(sidebar, { left: 0, top: 0, width: 244, height: 900 });
+    }
+  });
+  try {
+    const { win } = f;
+    const doc = win.document;
+
+    // 1. Verify Linux WebKitGTK perf sheet strips blurred control shadows.
+    const perfStyle = doc.getElementById("__ignow-linux-perf");
+    assert.ok(perfStyle, "Linux WebKitGTK must inject #__ignow-linux-perf");
+    assert.match(perfStyle.textContent, /text-shadow:\s*0 1px 0 rgba\(0, 0, 0, 0\.9\)/);
+    assert.match(perfStyle.textContent, /box-shadow:\s*0 0 0 1px rgba\(0, 0, 0, 0\.55\)/);
+
+    const video = doc.querySelector("article video");
+    assert.ok(video);
+    setRect(video, { left: 100, top: 20, width: 420, height: 720 });
+    Object.defineProperty(doc.documentElement, "scrollHeight", { value: 900, configurable: true });
+    const moreControl = doc.querySelector(".more-row [role='button']");
+    const moreSpan = moreControl.querySelector("span");
+    setRect(moreSpan, { left: 50, top: 830, width: 40, height: 20 });
+
+    // Trigger one play so video is active, then remove it and verify scanVideos prunes stale ref.
+    video.dispatchEvent(new win.Event("play"));
+    assert.equal(win.__ignowActiveVideo(), video);
+    video.remove();
+    win.dispatchEvent(new win.Event("scroll"));
+    await new Promise(r => setTimeout(r, 150));
+    assert.equal(win.__ignowActiveVideo(), null, "detached activeVideo must be pruned during scanVideos");
+
+    // 2. Verify history.replaceState route change does NOT invalidate mountedMoreInfo or re-measure sidebar.
+    let moreQueries = 0;
+    const origQsa = doc.querySelectorAll.bind(doc);
+    let gbcrCalls = 0;
+    const origGbcr = win.Element.prototype.getBoundingClientRect;
+    win.Element.prototype.getBoundingClientRect = function () {
+      gbcrCalls += 1;
+      return origGbcr.apply(this, arguments);
+    };
+    doc.querySelectorAll = function (sel) {
+      if (String(sel).includes("svg")) moreQueries += 1;
+      return origQsa(sel);
+    };
+
+    win.history.replaceState({}, "", "/reels/SecondReel/");
+    await new Promise(r => setTimeout(r, 80));
+    assert.equal(moreQueries, 0, "route update must reuse mountedMoreInfo without re-querying sidebar SVGs");
+    assert.equal(gbcrCalls, 0, "route update with connected sidebar and no images/videos must perform zero getBoundingClientRect calls");
+
+    // 3. Re-add two visible videos and check activeVideoForKeyboard via ArrowRight reads rect once per video.
+    const article = doc.querySelector("article");
+    const v1 = doc.createElement("video");
+    const v2 = doc.createElement("video");
+    Object.defineProperty(v1, "paused", { value: true, configurable: true });
+    Object.defineProperty(v2, "paused", { value: true, configurable: true });
+    setRect(v1, { left: 100, top: 50, width: 300, height: 400 });
+    setRect(v2, { left: 100, top: 50, width: 500, height: 700 });
+    article.appendChild(v1);
+    article.appendChild(v2);
+
+    let v1Reads = 0;
+    let v2Reads = 0;
+    v1.getBoundingClientRect = () => { v1Reads += 1; return { left: 100, top: 50, right: 400, bottom: 450, width: 300, height: 400 }; };
+    v2.getBoundingClientRect = () => { v2Reads += 1; return { left: 100, top: 50, right: 600, bottom: 750, width: 500, height: 700 }; };
+    doc.body.dispatchEvent(new win.KeyboardEvent("keydown", { key: "ArrowRight", code: "ArrowRight", bubbles: true, cancelable: true }));
+    assert.equal(v1Reads, 1, "activeVideoForKeyboard must read v1 rect at most once");
+    assert.equal(v2Reads, 1, "activeVideoForKeyboard must read v2 rect at most once");
+  } finally {
+    f.dom.window.close();
+  }
+});
+
+test("capOffscreenVideos cleans hidden rect.height<=0 off-route videos even when <=3 on /reels/, preserving [role=dialog]", async () => {
+  const f = createFixture("/reels/");
+  try {
+    const { win } = f;
+    const doc = win.document;
+    f.stage.remove();
+
+    const makeVideo = (src, inDialog = false) => {
+      const wrap = doc.createElement(inDialog ? "div" : "section");
+      if (inDialog) wrap.setAttribute("role", "dialog");
+      const v = doc.createElement("video");
+      v.src = src;
+      v.preload = "auto";
+      Object.defineProperty(v, "paused", { value: false, writable: true, configurable: true });
+      v.pause = () => { v.paused = true; };
+      v.load = () => {};
+      setRect(v, { left: 0, top: 0, width: 0, height: 0 });
+      wrap.appendChild(v);
+      doc.body.appendChild(wrap);
+      return v;
+    };
+
+    const hiddenOffRoute = makeVideo("https://cdn.instagram.com/offroute-1.mp4", false);
+    const hiddenDialog = makeVideo("https://cdn.instagram.com/dialog-1.mp4", true);
+
+    win.dispatchEvent(new win.Event("scroll"));
+    await new Promise(r => setTimeout(r, 160));
+
+    assert.equal(hiddenOffRoute.paused, true, "hidden off-route video must be paused even when <=3 videos");
+    assert.equal(hiddenOffRoute.preload, "none", "hidden off-route video must drop preload to none");
+    assert.equal(hiddenOffRoute.getAttribute("src"), null, "hidden off-route https video must unload src even on /reels/");
+    assert.equal(hiddenOffRoute.dataset.ignowDeferredSrc, "https://cdn.instagram.com/offroute-1.mp4");
+    assert.equal(hiddenDialog.getAttribute("src"), "https://cdn.instagram.com/dialog-1.mp4", "dialog video must stay intact");
+
+    setRect(hiddenOffRoute, { left: 100, top: 100, width: 420, height: 720 });
+    win.dispatchEvent(new win.Event("scroll"));
+    await new Promise(r => setTimeout(r, 160));
+    assert.equal(hiddenOffRoute.getAttribute("src"), "https://cdn.instagram.com/offroute-1.mp4", "restored visible video recovers deferred src");
+  } finally {
+    f.dom.window.close();
+  }
+});
+
+test("lazy video controls skip far-offscreen Reels until play, defer native mute click off scroll transitions, and keep explicit mute synchronous", async () => {
+  const f = createFixture("/reels/");
+  try {
+    const { win } = f;
+    const doc = win.document;
+    const main = doc.querySelector("main") || doc.body;
+
+    // Far-offscreen Reel (>2x viewport height away) must NOT pre-mount 10-node controls
+    const farWrap = doc.createElement("div");
+    const farVideo = doc.createElement("video");
+    farVideo.src = "https://cdn.instagram.com/far-reel.mp4";
+    Object.defineProperty(farVideo, "paused", { value: true, writable: true, configurable: true });
+    setRect(farVideo, { left: 100, top: 2600, width: 420, height: 720 });
+    farWrap.appendChild(farVideo);
+    main.appendChild(farWrap);
+
+    win.dispatchEvent(new win.Event("scroll"));
+    await new Promise(r => setTimeout(r, 160));
+    assert.equal(farVideo.dataset.ignowNativeControls, undefined, "far-offscreen Reel must stay lazily unmounted");
+    assert.equal(farWrap.querySelector(".ignow-video-controls"), null);
+
+    // Firing play mounts controls on demand
+    farVideo.paused = false;
+    farVideo.dispatchEvent(new win.Event("play"));
+    assert.equal(farVideo.dataset.ignowNativeControls, "1", "playing video must mount controls lazily");
+    assert.ok(farWrap.querySelector(".ignow-video-controls"));
+
+    // Deferred native mute click during Reel scroll/play transition
+    const cornerBtn = doc.createElement("button");
+    let cornerState = "muted";
+    let cornerClicks = 0;
+    cornerBtn.setAttribute("aria-label", "Audio is muted");
+    setRect(cornerBtn, { left: 710, top: 680, width: 32, height: 32 });
+    cornerBtn.addEventListener("click", () => {
+      cornerClicks += 1;
+      cornerState = cornerState === "muted" ? "playing" : "muted";
+      cornerBtn.setAttribute("aria-label", cornerState === "muted" ? "Audio is muted" : "Audio is playing");
+      f.video.muted = cornerState === "muted";
+      f.video.dispatchEvent(new win.Event("volumechange"));
+    });
+    f.stage.appendChild(cornerBtn);
+
+    f.video.src = "https://cdn.instagram.com/reel-next.mp4";
+    Object.defineProperty(f.video, "paused", { value: false, writable: true, configurable: true });
+    f.video.muted = true;
+    win.dispatchEvent(new win.Event("wheel"));
+    f.video.dispatchEvent(new win.Event("play"));
+
+    // Instant video audio without synchronous React click mid-scroll
+    assert.equal(f.video.muted, false, "video unmutes immediately without waiting for native click");
+    assert.equal(cornerClicks, 0, "native mute button must NOT be clicked synchronously mid-scroll");
+
+    await new Promise(r => setTimeout(r, 230));
+    assert.equal(cornerClicks, 1, "native mute button syncs once after scroll settles");
+    assert.equal(cornerBtn.getAttribute("aria-label"), "Audio is playing");
+
+    // Explicit user mute click remains synchronous
+    const volBtn = f.stage.querySelector(".ignow-video-controls__volume");
+    volBtn.click();
+    assert.equal(cornerClicks, 2, "explicit user mute click must sync native button synchronously");
+    assert.equal(f.video.muted, true);
+  } finally {
+    f.dom.window.close();
+  }
+});
+
+test("Linux perf sheet avoids :has(), defers large stylesheet scans off interactive startup, top-frame guard skips iframes, scroll skips full img scans, and caches cap at 120", async () => {
+  // 1. Top-frame guard in embedded iframe
+  const iframeDom = new JSDOM("<!doctype html><html><body><iframe></iframe></body></html>", {
+    url: "https://www.instagram.com/",
+    runScripts: "outside-only"
+  });
+  try {
+    const iframeWin = iframeDom.window.document.querySelector("iframe").contentWindow;
+    iframeWin.eval(source);
+    assert.equal(iframeWin.__ignowMediaToolsInstalled, undefined, "script must skip non-top frames");
+  } finally {
+    iframeDom.window.close();
+  }
+
+  // 2. Linux perf :has() removal + >200-rule stylesheet deferral at interactive startup
+  const manyRules = Array.from({ length: 205 }, (_, i) => `.r${i} { color: red; }`).join("\n") + "\n.big-blur { filter: blur(90px); }";
+  const linuxDom = new JSDOM(`<!doctype html><html><head><style>${manyRules}</style></head><body><main><article><img class="decor" aria-hidden="true" src="https://cdn.instagram.com/bg.jpg" /><video src="https://cdn.instagram.com/v.mp4"></video></article></main></body></html>`, {
+    url: "https://www.instagram.com/reels/",
+    pretendToBeVisual: true,
+    runScripts: "dangerously"
+  });
+  try {
+    const win = linuxDom.window;
+    Object.defineProperty(win.navigator, "platform", { value: "Linux x86_64", configurable: true });
+    Object.defineProperty(win.navigator, "userAgent", {
+      value: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 Safari/605.1.15",
+      configurable: true
+    });
+    let readyStateVal = "interactive";
+    Object.defineProperty(win.document, "readyState", { get: () => readyStateVal, configurable: true });
+    const v = win.document.querySelector("video");
+    setRect(v, { left: 100, top: 50, width: 420, height: 720 });
+
+    win.eval(source);
+    const perfStyle = win.document.getElementById("__ignow-linux-perf");
+    assert.ok(perfStyle);
+    assert.equal(perfStyle.textContent.includes(":has("), false, "#__ignow-linux-perf must not use div:has(...) selectors");
+    assert.equal(win.document.querySelector("img.decor").classList.contains("ignow-linux-no-blur"), true, "mounted video stage must mark aria-hidden backdrop img directly");
+    assert.equal(perfStyle.textContent.includes(".big-blur"), false, ">200-rule stylesheet scan must defer off interactive startup");
+
+    readyStateVal = "complete";
+    win.dispatchEvent(new win.Event("load"));
+    assert.match(perfStyle.textContent, /\.big-blur\s*\{[^}]*filter:\s*none\s*!important/, "deferred stylesheet scan runs on window load");
+  } finally {
+    linuxDom.window.close();
+  }
+
+  // 3. Scroll skips document.querySelectorAll("img") and mediaCache/rawNodeCache cap at 120
+  let fetchPayloadText = "";
+  const f = createFixture("/", {
+    beforeEval: win => {
+      win.fetch = async () => ({
+        ok: Boolean(fetchPayloadText),
+        status: fetchPayloadText ? 200 : 404,
+        url: "https://www.instagram.com/api/graphql",
+        headers: { get: () => "application/json" },
+        clone: () => ({ text: async () => fetchPayloadText }),
+        text: async () => fetchPayloadText
+      });
+    }
+  });
+  try {
+    const { win } = f;
+    const doc = win.document;
+    let imgQueries = 0;
+    const origQsa = doc.querySelectorAll.bind(doc);
+    doc.querySelectorAll = sel => {
+      if (sel === "img") imgQueries += 1;
+      return origQsa(sel);
+    };
+    win.dispatchEvent(new win.Event("scroll"));
+    await new Promise(r => setTimeout(r, 160));
+    assert.equal(imgQueries, 0, "scroll scan must not call document.querySelectorAll('img')");
+    doc.querySelectorAll = origQsa;
+
+    for (let i = 0; i < 130; i += 1) {
+      const code = `CapCode${String(i).padStart(3, "0")}`;
+      fetchPayloadText = JSON.stringify({
+        data: {
+          media: {
+            code,
+            user: { username: "capuser" },
+            image_versions2: { candidates: [{ url: `https://cdn.instagram.com/${code}.jpg`, width: 1080, height: 1080 }] }
+          }
+        }
+      });
+      await win.fetch("https://www.instagram.com/api/graphql");
+      await new Promise(r => setTimeout(r, 2));
+      if ((i + 1) % 10 === 0) {
+        await win.__ignowTools.openNativeDownloader(`https://www.instagram.com/p/${code}/`, null);
+      }
+    }
+    fetchPayloadText = "";
+    const dlCallsBefore = f.calls.length;
+    await win.__ignowTools.openNativeDownloader("https://www.instagram.com/p/CapCode000/", null);
+    await win.__ignowTools.openNativeDownloader("https://www.instagram.com/p/CapCode129/", null);
+    const dlCalls = f.calls.slice(dlCallsBefore).filter(c => c.command === "open_downloader_window");
+    const oldest = dlCalls.find(c => c.args.url.includes("CapCode000"));
+    const newest = dlCalls.find(c => c.args.url.includes("CapCode129"));
+    assert.equal(oldest.args.payloadJson, null, "oldest entry beyond 120 must be evicted from cache");
+    assert.ok(newest.args.payloadJson && newest.args.payloadJson.includes("CapCode129"), "newest entry within 120 must stay cached");
+  } finally {
+    f.dom.window.close();
+  }
+});
+
+test("Linux WebKitGTK tears down disconnected removed <video> elements while preserving reparented and non-Linux videos", async () => {
+  const runDetachCase = async (isLinux) => {
+    const f = createFixture("/explore/", {
+      beforeEval: win => {
+        Object.defineProperty(win.navigator, "platform", {
+          value: isLinux ? "Linux x86_64" : "Win32",
+          configurable: true
+        });
+        Object.defineProperty(win.navigator, "userAgent", {
+          value: isLinux
+            ? "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 Safari/605.1.15"
+            : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Edg/130.0.0.0",
+          configurable: true
+        });
+      }
+    });
+    try {
+      const { win } = f;
+      const doc = win.document;
+      const makeVid = url => {
+        const v = doc.createElement("video");
+        v.src = url;
+        Object.defineProperty(v, "paused", { value: false, writable: true, configurable: true });
+        v.pause = () => { v.paused = true; };
+        let loads = 0;
+        v.load = () => { loads += 1; };
+        v.__loads = () => loads;
+        doc.body.appendChild(v);
+        return v;
+      };
+      const removed = makeVid("blob:https://www.instagram.com/removed-1");
+      const reparented = makeVid("blob:https://www.instagram.com/reparented-2");
+      removed.remove();
+      reparented.remove();
+      doc.body.appendChild(reparented);
+
+      await new Promise(r => setTimeout(r, 200));
+      return {
+        removedSrc: removed.getAttribute("src"),
+        removedPaused: removed.paused,
+        removedLoads: removed.__loads(),
+        reparentedSrc: reparented.getAttribute("src")
+      };
+    } finally {
+      f.dom.window.close();
+    }
+  };
+
+  const linuxRes = await runDetachCase(true);
+  assert.equal(linuxRes.removedSrc, null, "disconnected video on Linux WebKitGTK must unload src");
+  assert.equal(linuxRes.removedPaused, true, "disconnected video on Linux WebKitGTK must pause");
+  assert.equal(linuxRes.removedLoads, 1, "disconnected video on Linux WebKitGTK must call load() once");
+  assert.equal(linuxRes.reparentedSrc, "blob:https://www.instagram.com/reparented-2", "reparented connected video must stay intact");
+
+  const winRes = await runDetachCase(false);
+  assert.equal(winRes.removedSrc, "blob:https://www.instagram.com/removed-1", "non-Linux runtime must leave removed video src untouched");
+  assert.equal(winRes.removedLoads, 0, "non-Linux runtime must not call load() on removed video");
+});
+
+test("navigateReel schedules scan for newly snapped Reel controls, Linux tears down far-offscreen Reel controls and remounts, and timeupdate quantizes --ignow-progress to 0.5%", async () => {
+  const f = createFixture("/reels/", {
+    beforeEval: win => {
+      Object.defineProperty(win.navigator, "platform", { value: "Linux x86_64", configurable: true });
+      Object.defineProperty(win.navigator, "userAgent", {
+        value: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 Safari/605.1.15",
+        configurable: true
+      });
+    }
+  });
+  try {
+    const { win } = f;
+    const doc = win.document;
+
+    // 1. Progress line quantizes --ignow-progress to 0.5% steps
+    Object.defineProperty(f.video, "duration", { value: 100, configurable: true });
+    let curTime = 12.11;
+    Object.defineProperty(f.video, "currentTime", { get: () => curTime, configurable: true });
+    f.video.dispatchEvent(new win.Event("timeupdate"));
+    const progressEl = f.stage.querySelector(".ignow-video-controls__progress");
+    assert.equal(progressEl.style.getPropertyValue("--ignow-progress"), "12%");
+    curTime = 12.34;
+    f.video.dispatchEvent(new win.Event("timeupdate"));
+    assert.equal(progressEl.style.getPropertyValue("--ignow-progress"), "12.5%");
+
+    // 2. Far-offscreen paused Reel tears down controls on Linux, then remounts when snapped via ArrowDown
+    Object.defineProperty(f.video, "paused", { value: true, writable: true, configurable: true });
+    setRect(f.video, { left: 100, top: -3500, width: 420, height: 740 });
+    win.dispatchEvent(new win.Event("scroll"));
+    await new Promise(r => setTimeout(r, 170));
+    assert.equal(f.video.dataset.ignowNativeControls, undefined, "far-offscreen Reel must tear down controls on Linux");
+    assert.equal(f.stage.querySelector(".ignow-video-controls"), null);
+
+    // Move video back into viewport without firing window scroll, then press ArrowDown -> navigateReel schedules scan
+    setRect(f.video, { left: 100, top: 60, width: 420, height: 740 });
+    Object.defineProperty(doc.documentElement, "scrollHeight", { value: 900, configurable: true });
+    doc.body.dispatchEvent(new win.KeyboardEvent("keydown", { key: "ArrowDown", code: "ArrowDown", bubbles: true, cancelable: true }));
+    await new Promise(r => setTimeout(r, 130));
+    assert.equal(f.video.dataset.ignowNativeControls, "1", "navigateReel must schedule scan so newly snapped Reel mounts controls");
+    assert.ok(f.stage.querySelector(".ignow-video-controls"));
+  } finally {
+    f.dom.window.close();
+  }
+});
+
+test("keyboard slider inputs work, blur cleans active volume drag, viewer exposes modal ARIA + restores focus, foreground audio preserves pre-hide mute, and Linux blur scan caches unchanged sheets", async () => {
+  const f = createFixture("/reels/", {
+    beforeEval: win => {
+      Object.defineProperty(win.navigator, "platform", { value: "Linux x86_64", configurable: true });
+      Object.defineProperty(win.navigator, "userAgent", {
+        value: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 Safari/605.1.15",
+        configurable: true
+      });
+    }
+  });
+  try {
+    const { win } = f;
+    const doc = win.document;
+
+    // 1. Keyboard `input` events on progress and volume sliders update video currentTime and volume
+    let curTime = 0;
+    Object.defineProperty(f.video, "duration", { value: 80, configurable: true });
+    Object.defineProperty(f.video, "currentTime", {
+      get: () => curTime,
+      set: val => { curTime = Number(val); },
+      configurable: true
+    });
+    const progressEl = f.stage.querySelector(".ignow-video-controls__progress");
+    const volumeSlider = f.stage.querySelector(".ignow-video-controls__volume-slider");
+    const volumeGroup = f.stage.querySelector(".ignow-video-controls__volume-group");
+    progressEl.value = "25";
+    progressEl.dispatchEvent(new win.Event("input", { bubbles: true }));
+    assert.equal(curTime, 20, "keyboard input on seek bar must seek to 25% of 80s");
+
+    volumeSlider.value = "82";
+    volumeSlider.dispatchEvent(new win.Event("input", { bubbles: true }));
+    assert.ok(Math.abs(f.video.volume - 0.82) < 0.001, "keyboard input on volume slider must update video volume");
+
+    // 2. Window blur clears active seek/volume drag state
+    setRect(volumeSlider, { left: 10, top: 680, width: 64, height: 23 });
+    const makePointer = (type, props = {}) => Object.assign(new win.MouseEvent(type, { bubbles: true, button: 0, ...props }), {
+      pointerId: props.pointerId ?? 9,
+      pointerType: "mouse"
+    });
+    volumeSlider.dispatchEvent(makePointer("pointerdown", { clientX: 20, pointerId: 9 }));
+    assert.equal(volumeGroup.classList.contains("ignow-volume-open"), true);
+    win.dispatchEvent(new win.Event("blur"));
+    assert.equal(volumeGroup.classList.contains("ignow-volume-open"), false, "window blur must release active volume drag");
+
+    // 3. __ignowEnsureForegroundAudio preserves pre-hide mute instead of unmuting user/pre-hide muted video
+    f.video.dataset.ignowAudioUserActivated = "";
+    f.video.dataset.ignowMutedByIgnow = "";
+    f.video.muted = true;
+    assert.equal(f.video.muted, true);
+    Object.defineProperty(f.video, "paused", { value: false, writable: true, configurable: true });
+    f.video.pause = () => { f.video.paused = true; };
+    win.__onWindowHidden();
+    assert.equal(win.__ignowPauseReport().includes('"muted":true'), true);
+    f.video.paused = false;
+    assert.equal(win.__ignowEnsureForegroundAudio(), "ok");
+    assert.equal(f.video.muted, true, "__ignowEnsureForegroundAudio must preserve pre-hide muted state");
+    f.video.paused = true;
+
+    // 4. Image viewer sets modal ARIA, clears drag on pointercancel, and restores focus on close
+    const triggerImg = doc.createElement("img");
+    triggerImg.src = "https://cdn.instagram.com/viewer-src.jpg";
+    setRect(triggerImg, { left: 100, top: 80, width: 400, height: 400 });
+    const triggerBtn = doc.createElement("button");
+    triggerBtn.type = "button";
+    triggerBtn.textContent = "Focus origin";
+    doc.querySelector("article").append(triggerImg, triggerBtn);
+    triggerBtn.focus();
+    triggerImg.dispatchEvent(new win.MouseEvent("click", { bubbles: true, ctrlKey: true, cancelable: true }));
+    const overlay = doc.querySelector(".ignow-media-viewer");
+    assert.equal(overlay.getAttribute("role"), "dialog");
+    assert.equal(overlay.getAttribute("aria-modal"), "true");
+    assert.equal(doc.activeElement, overlay.querySelector(".ignow-media-viewer__close"));
+    const viewport = overlay.querySelector(".ignow-media-viewer__viewport");
+    viewport.dispatchEvent(makePointer("pointerdown", { clientX: 50, clientY: 50, pointerId: 4 }));
+    viewport.dispatchEvent(makePointer("pointercancel", { pointerId: 4 }));
+    viewport.dispatchEvent(makePointer("pointermove", { clientX: 120, clientY: 120, pointerId: 4 }));
+    assert.equal(overlay.querySelector(".ignow-media-viewer__image").style.transform.includes("translate(calc(-50% + 0px)"), true, "pointercancel must stop viewer panning");
+    overlay.querySelector(".ignow-media-viewer__close").click();
+    assert.equal(doc.activeElement, triggerBtn, "closing viewer must restore focus");
+
+    // 5. Linux blur scan caches unchanged stylesheet rule signature across repeated scrolls
+    const extraSheet = doc.createElement("style");
+    extraSheet.textContent = ".s1 { color: red; }";
+    doc.head.appendChild(extraSheet);
+    win.dispatchEvent(new win.Event("scroll"));
+    await new Promise(r => setTimeout(r, 170));
+    let selectorReads = 0;
+    const rule0 = extraSheet.sheet.cssRules[0];
+    const origSelDesc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(rule0), "selectorText");
+    Object.defineProperty(rule0, "selectorText", {
+      get() {
+        selectorReads += 1;
+        return origSelDesc.get.call(this);
+      },
+      configurable: true
+    });
+    win.dispatchEvent(new win.Event("scroll"));
+    await new Promise(r => setTimeout(r, 170));
+    assert.equal(selectorReads, 0, "repeated scroll with unchanged stylesheets must skip rule scanning");
+  } finally {
+    f.dom.window.close();
+  }
+});
