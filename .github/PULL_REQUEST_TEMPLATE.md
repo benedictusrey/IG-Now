@@ -38,13 +38,29 @@ Thank you so much for taking the time to contribute to **IG-Now**! Every contrib
 
 *Please check off the tests and checks verified before opening this PR:*
 
-- [ ] JavaScript syntax passes: `node --check frontend/instagram-tools.js`
-- [ ] Rust format & compile checks pass:
+- [ ] Root frontend unit tests and syntax checks pass:
+  ```bash
+  npm test
+  node --check frontend/instagram-tools.js
+  node --check frontend/direct-messages.js
+  node --check frontend/downloader.js
+  ```
+- [ ] Rust format, compile & unit checks pass:
   ```bash
   cd src-tauri
   cargo fmt --all -- --check
-  cargo check
-  cargo test --lib
+  cargo check --locked
+  cargo test --locked --lib
+  ```
+- [ ] Electron-for-Linux unit tests and syntax checks pass:
+  ```bash
+  cd electron-linux
+  npm test
+  node --check backend.js
+  node --check main.js
+  node --check preload-instagram.js
+  node --check preload-downloader.js
+  node --check test.cjs
   ```
 - [ ] Manual smoke testing performed (window launch, video seekbar, volume toggle/slider, minimize pause, close-to-tray).
 - [ ] All code changes follow existing conventions, defensive try/catch blocks, and clean logging.

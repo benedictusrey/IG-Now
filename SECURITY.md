@@ -17,10 +17,10 @@ The security, privacy, and integrity of **IG-Now** and its users are top priorit
 ## 🔐 Core Security & Privacy Guarantees
 
 - **No analytics, no tracking, no remote database.** IG-Now does not collect, transmit, or store any of your Instagram activity. There is no telemetry, no ad SDK, and no account database.
-- **Your session stays local.** The signed-in session lives in WebView2/WebKit's on-disk profile on *your* computer. IG-Now has no profile manager and never sees your password — you sign in through Instagram's own official page inside the app.
+- **Your session stays local.** The signed-in session lives on *your* computer — in WebView2/WKWebView's on-disk profile on Windows/macOS, or in Electron's `persist:profile-personal` partition on Linux. IG-Now has no profile manager and never sees your password — you sign in through Instagram's own official page inside the app.
 - **Split, least-privilege native capabilities.**
-  - `remote-instagram-com` (`capabilities/remote.json`, scoped strictly to `https://www.instagram.com/*`) exposes only explicit media saving, external HTTP(S) hand-off, unread DM count notifications, and native Downloader hand-off/probe submission.
-  - `downloader-local` (`capabilities/downloader.json`, restricted to the local bundled `downloader.html` window) manages local post inspection, batch media/caption writing, and folder opening.
+  - **Windows & macOS (Tauri v2):** `remote-instagram-com` (`capabilities/remote.json`, scoped strictly to `https://www.instagram.com/*`) exposes only explicit media saving, external HTTP(S) hand-off, unread DM count notifications, and native Downloader hand-off/probe submission; `downloader-local` (`capabilities/downloader.json`, restricted to the local bundled `downloader.html` window) manages local post inspection, batch media/caption writing, and folder opening.
+  - **Linux (`electron-linux/`):** Enforces `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, navigation allowlisting (`isAllowedInstagramNavUrl`), and origin-gated IPC allowlists (`REMOTE_COMMANDS` for `https://www.instagram.com/*` via `preload-instagram.js` vs `DOWNLOADER_COMMANDS` for local `downloader.html` via `preload-downloader.js`).
 - **Strict URL, header, and binary validation.**
   - Only clean `http://` / `https://` URLs without control characters (`is_safe_http_url`) are allowed for external browser opening or downloads; `shortcode_from_url` rejects non-Instagram share URLs via `is_instagram_share_url`.
   - Session `Cookie:` and `X-CSRFToken:` headers are strictly gated to `.instagram.com` hosts (`is_instagram_app_host`) and never sent to third-party origins or CDN redirects.

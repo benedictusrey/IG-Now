@@ -88,6 +88,7 @@ fn is_window_hidden_state(minimized: Option<bool>, visible: Option<bool>) -> boo
     minimized.unwrap_or(false) || !visible.unwrap_or(false)
 }
 
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn dmabuf_disable_reason(
     dmabuf_override: Option<&std::ffi::OsStr>,
     is_wsl: bool,
@@ -114,6 +115,7 @@ fn dmabuf_disable_reason(
     None
 }
 
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn should_demote_nvdec_plugins(
     gst_rank_override: Option<&std::ffi::OsStr>,
     dmabuf_disabled: bool,
@@ -121,6 +123,7 @@ fn should_demote_nvdec_plugins(
     cfg!(target_os = "linux") && dmabuf_disabled && gst_rank_override.is_none()
 }
 
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn recommended_skia_cpu_threads(available_cpus: usize) -> usize {
     if available_cpus < 4 {
         available_cpus.max(1)
@@ -129,6 +132,7 @@ fn recommended_skia_cpu_threads(available_cpus: usize) -> usize {
     }
 }
 
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn should_configure_cpu_fallback_tuning(
     dmabuf_disabled: bool,
     env_override: Option<&std::ffi::OsStr>,
@@ -136,6 +140,7 @@ fn should_configure_cpu_fallback_tuning(
     cfg!(target_os = "linux") && dmabuf_disabled && env_override.is_none()
 }
 
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn should_default_x11_backend(
     gdk_backend: Option<&std::ffi::OsStr>,
     wayland_display: Option<&std::ffi::OsStr>,
@@ -983,16 +988,6 @@ fn sanitize_header_value(raw: &str) -> String {
         .collect()
 }
 
-fn is_valid_mp4_header(bytes: &[u8]) -> bool {
-    if bytes.len() < 8 {
-        return false;
-    }
-    matches!(
-        &bytes[4..8],
-        b"ftyp" | b"styp" | b"wide" | b"free" | b"moov"
-    )
-}
-
 fn build_target_path(
     base_dir: PathBuf,
     media_type: &str,
@@ -1037,18 +1032,21 @@ fn media_target_path(
     Ok(target)
 }
 
-fn validate_mp4_file(path: &Path) -> Result<(), String> {
+fn validate_video_file(path: &Path, allow_webm: bool) -> Result<(), String> {
     let mut file = fs::File::open(path).map_err(|error| error.to_string())?;
-    let mut header = [0_u8; 8];
-    file.read_exact(&mut header).map_err(|_| {
-        "The downloaded video was only a media fragment, not a complete MP4.".to_string()
-    })?;
-    if !is_valid_mp4_header(&header) {
+    let mut header = [0_u8; 16];
+    let n = file.read(&mut header).unwrap_or(0);
+    if !downloader::is_valid_download_video_header(&header[..n], allow_webm) {
         return Err(
             "The downloaded video was only a media fragment, not a complete MP4.".to_string(),
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+fn validate_mp4_file(path: &Path) -> Result<(), String> {
+    validate_video_file(path, false)
 }
 
 fn curl_download_to_file(
@@ -1105,24 +1103,16 @@ fn curl_download_to_file(
     Ok(())
 }
 
-fn validate_or_remove_mp4(path: &Path) -> Result<(), String> {
-    if let Err(err) = validate_mp4_file(path) {
+fn validate_or_remove_video_input(path: &Path, allow_webm: bool) -> Result<(), String> {
+    if let Err(err) = validate_video_file(path, allow_webm) {
         let _ = fs::remove_file(path);
         return Err(err);
     }
     Ok(())
 }
 
-fn is_valid_image_header(bytes: &[u8]) -> bool {
-    if bytes.len() < 12 {
-        return false;
-    }
-    bytes.starts_with(&[0xFF, 0xD8, 0xFF]) // JPEG
-        || bytes.starts_with(b"\x89PNG\r\n\x1a\n") // PNG
-        || bytes.starts_with(b"GIF87a")
-        || bytes.starts_with(b"GIF89a")
-        || (&bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP") // WebP
-        || (&bytes[4..8] == b"ftyp") // AVIF/HEIC ISO-BMFF container
+fn validate_or_remove_mp4(path: &Path) -> Result<(), String> {
+    validate_or_remove_video_input(path, false)
 }
 
 fn validate_or_remove_image(path: &Path) -> Result<(), String> {
@@ -1133,9 +1123,9 @@ fn validate_or_remove_image(path: &Path) -> Result<(), String> {
             return Err(err.to_string());
         }
     };
-    let mut header = [0_u8; 16];
+    let mut header = [0_u8; 64];
     let n = file.read(&mut header).unwrap_or(0);
-    if !is_valid_image_header(&header[..n]) {
+    if !downloader::is_valid_image_header(&header[..n]) {
         let _ = fs::remove_file(path);
         return Err(
             "Instagram returned a non-image response (expired link or login page).".to_string(),
@@ -1166,7 +1156,7 @@ fn fetch_media_with_fallbacks(
     ua: &str,
     cookie_header: Option<&str>,
     target_path: &Path,
-) -> Result<Option<String>, String> {
+) -> Result<(PathBuf, Option<String>), String> {
     let primary = fetch_media_to_path(
         primary_url,
         media_type,
@@ -1183,7 +1173,7 @@ fn fetch_media_with_fallbacks(
     for (alt_url, alt_audio) in fallback_candidates {
         let _ = fs::remove_file(target_path);
         let alt_fb_audio = alt_audio.as_deref().or(fallback_audio_url);
-        if let Ok(warn) = fetch_media_to_path(
+        if let Ok(outcome) = fetch_media_to_path(
             alt_url,
             media_type,
             alt_audio.as_deref(),
@@ -1193,7 +1183,7 @@ fn fetch_media_with_fallbacks(
             cookie_header,
             target_path,
         ) {
-            return Ok(warn);
+            return Ok(outcome);
         }
     }
     primary
@@ -1220,6 +1210,7 @@ fn single_selection_file_stem(
     carousel_slide_stem(&base, item_index, item_count)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn fetch_media_to_path(
     url: &str,
     media_type: &str,
@@ -1229,21 +1220,22 @@ fn fetch_media_to_path(
     ua: &str,
     cookie_header: Option<&str>,
     target_path: &Path,
-) -> Result<Option<String>, String> {
+) -> Result<(PathBuf, Option<String>), String> {
     let clean_audio = audio_url.map(str::trim).filter(|s| is_safe_http_url(s));
     let clean_fallback = fallback_audio_url
         .map(str::trim)
         .filter(|s| is_safe_http_url(s));
     if media_type.eq_ignore_ascii_case("video") {
+        let ffmpeg = downloader::find_ffmpeg_binary();
         if let Some(a_url) = clean_audio {
-            if let Some(ffmpeg) = downloader::find_ffmpeg_binary() {
-                let temp_v = downloader::unique_temp_media_path("video", "mp4");
-                let temp_a = downloader::unique_temp_media_path("audio", "m4a");
+            if let Some(ref ff) = ffmpeg {
+                let temp_v = downloader::unique_temp_media_path("video", "bin");
+                let temp_a = downloader::unique_temp_media_path("audio", "bin");
                 curl_download_to_file(url, referer, ua, cookie_header, &temp_v)?;
-                validate_or_remove_mp4(&temp_v)?;
+                validate_or_remove_video_input(&temp_v, true)?;
                 let audio_ok = curl_download_to_file(a_url, referer, ua, cookie_header, &temp_a);
                 let mux_ok = if audio_ok.is_ok() {
-                    downloader::mux_video_audio_ffmpeg(&ffmpeg, &temp_v, &temp_a, target_path)
+                    downloader::mux_video_audio_ffmpeg(ff, &temp_v, &temp_a, target_path)
                 } else {
                     Err("Audio stream download failed".to_string())
                 };
@@ -1251,54 +1243,93 @@ fn fetch_media_to_path(
                 if mux_ok.is_ok() {
                     let _ = fs::remove_file(&temp_v);
                     validate_or_remove_mp4(target_path)?;
-                    return Ok(None);
+                    return Ok((target_path.to_path_buf(), None));
                 }
-                downloader::replace_file_atomically(&temp_v, target_path)?;
-                let _ = downloader::ensure_mp4_aac_audio(&ffmpeg, target_path, None);
-                return Ok(Some(
-                    "Saved .mp4 video stream only; DASH audio muxing failed.".to_string(),
+                let norm_res = downloader::normalize_video_mp4(ff, &temp_v, None, target_path);
+                let _ = fs::remove_file(&temp_v);
+                let warn = norm_res?;
+                validate_or_remove_mp4(target_path)?;
+                return Ok((
+                    target_path.to_path_buf(),
+                    warn.map(|_| {
+                        "Saved .mp4 video stream only; DASH audio muxing failed.".to_string()
+                    }),
                 ));
             }
             curl_download_to_file(url, referer, ua, cookie_header, target_path)?;
             validate_or_remove_mp4(target_path)?;
-            return Ok(Some(
-                "Saved .mp4 video stream only; install ffmpeg to combine DASH audio.".to_string(),
+            return Ok((
+                target_path.to_path_buf(),
+                Some(
+                    "Saved .mp4 video stream only; install ffmpeg to combine DASH audio."
+                        .to_string(),
+                ),
             ));
         }
 
-        curl_download_to_file(url, referer, ua, cookie_header, target_path)?;
-        validate_or_remove_mp4(target_path)?;
-        if let Some(ffmpeg) = downloader::find_ffmpeg_binary() {
+        if let Some(ref ff) = ffmpeg {
+            let temp_v = downloader::unique_temp_media_path("video", "bin");
+            if let Err(err) = curl_download_to_file(url, referer, ua, cookie_header, &temp_v) {
+                let _ = fs::remove_file(&temp_v);
+                return Err(err);
+            }
+            validate_or_remove_video_input(&temp_v, true)?;
             let mut temp_fb: Option<std::path::PathBuf> = None;
-            if let Some(fb_url) = clean_fallback {
-                if matches!(
-                    downloader::probe_mp4_audio_state(&ffmpeg, target_path),
-                    downloader::Mp4AudioState::Missing
-                ) {
-                    let candidate = downloader::unique_temp_media_path("fallback-audio", "m4a");
+            let preprobed = if let Some(fb_url) = clean_fallback {
+                let streams = downloader::probe_media_streams(ff, &temp_v);
+                if streams.audio_state == downloader::Mp4AudioState::Missing {
+                    let candidate = downloader::unique_temp_media_path("fallback-audio", "bin");
                     if curl_download_to_file(fb_url, referer, ua, cookie_header, &candidate).is_ok()
                     {
                         temp_fb = Some(candidate);
+                    } else {
+                        let _ = fs::remove_file(&candidate);
                     }
                 }
-            }
-            let ensure_res =
-                downloader::ensure_mp4_aac_audio(&ffmpeg, target_path, temp_fb.as_deref());
+                Some(streams)
+            } else {
+                None
+            };
+            let ensure_res = downloader::normalize_video_mp4_with_streams(
+                ff,
+                &temp_v,
+                temp_fb.as_deref(),
+                target_path,
+                preprobed.as_ref(),
+            );
+            let _ = fs::remove_file(&temp_v);
             if let Some(ref p) = temp_fb {
                 let _ = fs::remove_file(p);
             }
             let warn = ensure_res?;
             validate_or_remove_mp4(target_path)?;
-            return Ok(warn);
+            return Ok((target_path.to_path_buf(), warn));
         }
-        return Ok(None);
+
+        curl_download_to_file(url, referer, ua, cookie_header, target_path)?;
+        validate_or_remove_mp4(target_path)?;
+        return Ok((target_path.to_path_buf(), None));
+    }
+
+    if media_type.eq_ignore_ascii_case("image") {
+        let temp_img = downloader::unique_temp_media_path_near(target_path, "imgdl", "tmp");
+        if let Err(err) = curl_download_to_file(url, referer, ua, cookie_header, &temp_img) {
+            let _ = fs::remove_file(&temp_img);
+            return Err(err);
+        }
+        validate_or_remove_image(&temp_img)?;
+        let res = downloader::normalize_image_file(
+            downloader::find_ffmpeg_binary().as_deref(),
+            &temp_img,
+            target_path,
+        );
+        let _ = fs::remove_file(&temp_img);
+        let final_path = res?;
+        return Ok((final_path, None));
     }
 
     curl_download_to_file(url, referer, ua, cookie_header, target_path)?;
-    if media_type.eq_ignore_ascii_case("image") {
-        validate_or_remove_image(target_path)?;
-    }
-    Ok(None)
+    Ok((target_path.to_path_buf(), None))
 }
 
 fn fetch_audio_only_to_path(
@@ -1313,7 +1344,7 @@ fn fetch_audio_only_to_path(
         .ok_or_else(|| "FFmpeg is required to extract Audio Only (.m4a) files.".to_string())?;
     let clean_audio = audio_url.map(str::trim).filter(|s| is_safe_http_url(s));
     if let Some(a_url) = clean_audio {
-        let temp_a = downloader::unique_temp_media_path("audio-src", "m4a");
+        let temp_a = downloader::unique_temp_media_path("audio-src", "bin");
         if curl_download_to_file(a_url, referer, ua, cookie_header, &temp_a).is_ok() {
             let ext_res = downloader::extract_audio_aac_m4a_ffmpeg(&ffmpeg, &temp_a, target_path);
             let _ = fs::remove_file(&temp_a);
@@ -1326,17 +1357,20 @@ fn fetch_audio_only_to_path(
         }
     }
 
-    let temp_v = downloader::unique_temp_media_path("audio-vid", "mp4");
+    let temp_v = downloader::unique_temp_media_path("audio-vid", "bin");
     curl_download_to_file(video_url, referer, ua, cookie_header, &temp_v)?;
-    validate_or_remove_mp4(&temp_v)?;
-    if matches!(
-        downloader::probe_mp4_audio_state(&ffmpeg, &temp_v),
-        downloader::Mp4AudioState::Missing
-    ) {
+    validate_or_remove_video_input(&temp_v, true)?;
+    let streams = downloader::probe_media_streams(&ffmpeg, &temp_v);
+    if streams.audio_state == downloader::Mp4AudioState::Missing {
         let _ = fs::remove_file(&temp_v);
         return Err("This Instagram video stream has no audio track to extract.".to_string());
     }
-    let res = downloader::extract_audio_aac_m4a_ffmpeg(&ffmpeg, &temp_v, target_path);
+    let res = downloader::extract_audio_aac_m4a_ffmpeg_with_streams(
+        &ffmpeg,
+        &temp_v,
+        target_path,
+        Some(&streams),
+    );
     let _ = fs::remove_file(&temp_v);
     res?;
     validate_or_remove_mp4(target_path)?;
@@ -1376,7 +1410,7 @@ async fn download_media(
     let (cookie_header, _) = instagram_auth_headers(&app, cookies.as_deref());
 
     tokio::task::spawn_blocking(move || -> Result<String, String> {
-        let _ = fetch_media_to_path(
+        let (final_path, _) = fetch_media_to_path(
             &url,
             &media_type,
             audio_url.as_deref(),
@@ -1386,10 +1420,54 @@ async fn download_media(
             cookie_header.as_deref(),
             &target_path,
         )?;
-        Ok(target_path.to_string_lossy().into_owned())
+        Ok(final_path.to_string_lossy().into_owned())
     })
     .await
     .map_err(|error| error.to_string())?
+}
+
+struct ProbeCancelGuard<'a> {
+    probe_state: &'a downloader::DownloaderProbeState,
+    request_id: String,
+}
+
+impl Drop for ProbeCancelGuard<'_> {
+    fn drop(&mut self) {
+        self.probe_state.cancel_probe(&self.request_id);
+    }
+}
+
+fn is_complete_inspected_post(
+    post: &downloader::InspectedPost,
+    requested_shortcode: Option<&str>,
+) -> bool {
+    if post.username.trim().is_empty() || post.shortcode.trim().is_empty() || post.items.is_empty()
+    {
+        return false;
+    }
+    if let Some(sc) = requested_shortcode.map(str::trim).filter(|s| !s.is_empty()) {
+        if !post.shortcode.eq_ignore_ascii_case(sc) {
+            return false;
+        }
+    }
+    post.items.iter().all(|item| {
+        !item.formats.is_empty()
+            && item
+                .formats
+                .iter()
+                .all(|fmt| !fmt.video_url.trim().is_empty())
+    })
+}
+
+fn select_fallback_audio(
+    formats: &[downloader::VideoFormat],
+    chosen_audio: Option<&str>,
+) -> Option<String> {
+    formats
+        .iter()
+        .filter_map(|f| f.audio_url.as_deref())
+        .find(|fb| !fb.is_empty() && chosen_audio != Some(*fb))
+        .map(str::to_string)
 }
 
 async fn probe_post_via_instagram_window(
@@ -1407,6 +1485,10 @@ async fn probe_post_via_instagram_window(
     let request_id = format!("probe-{nanos}");
     let (tx, rx) = tokio::sync::oneshot::channel();
     probe_state.register_probe(request_id.clone(), tx);
+    let _guard = ProbeCancelGuard {
+        probe_state,
+        request_id: request_id.clone(),
+    };
 
     let url_json = serde_json::to_string(clean_input).ok()?;
     let req_json = serde_json::to_string(&request_id).ok()?;
@@ -1414,11 +1496,9 @@ async fn probe_post_via_instagram_window(
         "if (window.__ignowTools && window.__ignowTools.probePostForDownloader) window.__ignowTools.probePostForDownloader({req_json}, {url_json});"
     );
     if ig_win.eval(&script).is_err() {
-        probe_state.cancel_probe(&request_id);
         return None;
     }
     let waited = tokio::time::timeout(std::time::Duration::from_secs(15), rx).await;
-    probe_state.cancel_probe(&request_id);
     if let Ok(Ok(raw_payload)) = waited {
         return downloader::extract_post_from_json_text(&raw_payload, shortcode, has_ffmpeg)
             .or_else(|| downloader::extract_post_from_html(&raw_payload, shortcode, has_ffmpeg));
@@ -1456,54 +1536,79 @@ async fn inspect_instagram_post(
 
     let (cookie_header, csrf_token) = instagram_auth_headers(&app, None);
     let input_for_http = clean_input.clone();
-    let http_res = tokio::task::spawn_blocking(move || {
+    let mut http_handle = tokio::task::spawn_blocking(move || {
         downloader::inspect_via_http_cascade(
             &input_for_http,
             cookie_header.as_deref(),
             csrf_token.as_deref(),
         )
-    })
-    .await
-    .map_err(|e| e.to_string())?;
-
-    if let Ok(post) = http_res {
-        let mut best = match seed_post {
-            Some(seed) => downloader::pick_richer_inspected_post(post, seed),
-            None => post,
-        };
-        if best.username.is_empty() && best.items.len() <= 1 {
-            if let Some(probed) = probe_post_via_instagram_window(
-                &app,
-                &probe_state,
-                &clean_input,
-                shortcode.as_deref(),
-                has_ffmpeg,
-            )
-            .await
-            {
-                best = downloader::pick_richer_inspected_post(best, probed);
-            }
-        }
-        return Ok(best);
-    }
-
-    if let Some(post) = seed_post {
-        return Ok(post);
-    }
-
-    if let Some(post) = probe_post_via_instagram_window(
+    });
+    let probe_fut = probe_post_via_instagram_window(
         &app,
         &probe_state,
         &clean_input,
         shortcode.as_deref(),
         has_ffmpeg,
-    )
-    .await
-    {
-        return Ok(post);
-    }
+    );
+    tokio::pin!(probe_fut);
 
-    http_res
+    tokio::select! {
+        probe_res = &mut probe_fut => {
+            if let Some(probed) = probe_res {
+                if is_complete_inspected_post(&probed, shortcode.as_deref()) {
+                    return Ok(match seed_post {
+                        Some(seed) => downloader::pick_richer_inspected_post(probed, seed),
+                        None => probed,
+                    });
+                }
+                let http_res = http_handle.await.map_err(|e| e.to_string())?;
+                if let Ok(post) = http_res {
+                    let best = match seed_post {
+                        Some(seed) => downloader::pick_richer_inspected_post(post, seed),
+                        None => post,
+                    };
+                    return Ok(downloader::pick_richer_inspected_post(best, probed));
+                }
+                return Ok(match seed_post {
+                    Some(seed) => downloader::pick_richer_inspected_post(probed, seed),
+                    None => probed,
+                });
+            }
+            let http_res = http_handle.await.map_err(|e| e.to_string())?;
+            if let Ok(post) = http_res {
+                return Ok(match seed_post {
+                    Some(seed) => downloader::pick_richer_inspected_post(post, seed),
+                    None => post,
+                });
+            }
+            if let Some(post) = seed_post {
+                return Ok(post);
+            }
+            http_res
+        }
+        http_joined = &mut http_handle => {
+            let http_res = http_joined.map_err(|e| e.to_string())?;
+            if let Ok(post) = http_res {
+                let mut best = match seed_post {
+                    Some(seed) => downloader::pick_richer_inspected_post(post, seed),
+                    None => post,
+                };
+                if best.username.is_empty() && best.items.len() <= 1 {
+                    if let Some(probed) = probe_fut.await {
+                        best = downloader::pick_richer_inspected_post(best, probed);
+                    }
+                }
+                return Ok(best);
+            }
+            if let Some(post) = seed_post {
+                return Ok(post);
+            }
+            if let Some(post) = probe_fut.await {
+                return Ok(post);
+            }
+            http_res
+        }
+    }
 }
 
 #[tauri::command]
@@ -1642,18 +1747,12 @@ async fn download_post_selection(
             final_post.items.len(),
         );
         let target_path = media_target_path(&app, &item.kind, None, Some(&stem))?;
-        let target_str = target_path.to_string_lossy().into_owned();
         let video_url = chosen.video_url.clone();
         let audio_url = chosen.audio_url.clone();
-        let fallback_audio = item
-            .formats
-            .iter()
-            .find_map(|f| f.audio_url.as_deref())
-            .filter(|fb| audio_url.as_deref() != Some(*fb))
-            .map(str::to_string);
+        let fallback_audio = select_fallback_audio(&item.formats, audio_url.as_deref());
         let fallback_candidates = collect_item_fallback_candidates(item, &video_url);
         let kind = item.kind.clone();
-        let warning = tokio::task::spawn_blocking(move || {
+        let (final_path, warning) = tokio::task::spawn_blocking(move || {
             fetch_media_with_fallbacks(
                 &video_url,
                 &fallback_candidates,
@@ -1670,7 +1769,7 @@ async fn download_post_selection(
         .map_err(|e| e.to_string())??;
 
         return Ok(downloader::DownloadOutcome {
-            saved_paths: vec![target_str],
+            saved_paths: vec![final_path.to_string_lossy().into_owned()],
             caption_path: None,
             metadata_path: None,
             subfolder: None,
@@ -1686,7 +1785,7 @@ async fn download_post_selection(
     let subfolder = post_stem.clone();
 
     let item_count = final_post.items.len();
-    let mut indexed_results: Vec<(usize, String, Result<Option<String>, String>)> =
+    let mut indexed_results: Vec<(usize, Result<(PathBuf, Option<String>), String>)> =
         Vec::with_capacity(item_count);
     let mut join_set = tokio::task::JoinSet::new();
     let emit_progress = |completed: usize| {
@@ -1712,15 +1811,9 @@ async fn download_post_selection(
         };
         let stem = carousel_slide_stem(&post_stem, idx, item_count);
         let target_path = media_target_path(&app, &item.kind, Some(&subfolder), Some(&stem))?;
-        let target_str = target_path.to_string_lossy().into_owned();
         let v_url = fmt.video_url.clone();
         let a_url = fmt.audio_url.clone();
-        let fb_audio = item
-            .formats
-            .iter()
-            .find_map(|f| f.audio_url.as_deref())
-            .filter(|fb| a_url.as_deref() != Some(*fb))
-            .map(str::to_string);
+        let fb_audio = select_fallback_audio(&item.formats, a_url.as_deref());
         let fallback_candidates = collect_item_fallback_candidates(item, &v_url);
         let kind = item.kind.clone();
         let ref_clone = referer.clone();
@@ -1746,7 +1839,7 @@ async fn download_post_selection(
                 cookie_clone.as_deref(),
                 &target_path,
             );
-            (idx, target_str, res)
+            (idx, res)
         });
     }
 
@@ -1755,14 +1848,14 @@ async fn download_post_selection(
         emit_progress(indexed_results.len());
     }
 
-    indexed_results.sort_by_key(|(idx, _, _)| *idx);
+    indexed_results.sort_by_key(|(idx, _)| *idx);
     let mut saved_paths = Vec::new();
     let mut first_warning = None;
     let mut failed_slides = Vec::new();
-    for (idx, target_str, res) in indexed_results {
+    for (idx, res) in indexed_results {
         match res {
-            Ok(warn_opt) => {
-                saved_paths.push(target_str);
+            Ok((final_path, warn_opt)) => {
+                saved_paths.push(final_path.to_string_lossy().into_owned());
                 if first_warning.is_none() {
                     first_warning = warn_opt;
                 }
@@ -1844,26 +1937,55 @@ async fn save_media_bytes(
         file_stem.as_deref(),
     )?;
     tokio::task::spawn_blocking(move || -> Result<String, String> {
-        if media_type.eq_ignore_ascii_case("video") && !is_valid_mp4_header(&data) {
-            return Err(
-                "The downloaded video was only a media fragment, not a complete MP4.".to_string(),
-            );
+        if media_type.eq_ignore_ascii_case("video") {
+            let ffmpeg = downloader::find_ffmpeg_binary();
+            if !downloader::is_valid_download_video_header(&data, ffmpeg.is_some()) {
+                return Err(
+                    "The downloaded video was only a media fragment, not a complete MP4."
+                        .to_string(),
+                );
+            }
+            let temp_path = downloader::unique_temp_media_path_near(&target_path, "vbytes", "bin");
+            if let Err(err) = fs::write(&temp_path, data) {
+                let _ = fs::remove_file(&temp_path);
+                return Err(err.to_string());
+            }
+            let res = if let Some(ref ff) = ffmpeg {
+                downloader::normalize_video_mp4(ff, &temp_path, None, &target_path).map(|_| ())
+            } else {
+                downloader::replace_file_atomically(&temp_path, &target_path)
+            };
+            let _ = fs::remove_file(&temp_path);
+            res?;
+            validate_or_remove_mp4(&target_path)?;
+            return Ok(target_path.to_string_lossy().into_owned());
         }
-        if media_type.eq_ignore_ascii_case("image") && !is_valid_image_header(&data) {
-            return Err(
-                "Instagram returned a non-image response (expired link or login page).".to_string(),
+        if media_type.eq_ignore_ascii_case("image") {
+            if !downloader::is_valid_image_header(&data) {
+                return Err(
+                    "Instagram returned a non-image response (expired link or login page)."
+                        .to_string(),
+                );
+            }
+            let temp_path = downloader::unique_temp_media_path_near(&target_path, "ibytes", "tmp");
+            if let Err(err) = fs::write(&temp_path, data) {
+                let _ = fs::remove_file(&temp_path);
+                return Err(err.to_string());
+            }
+            let res = downloader::normalize_image_file(
+                downloader::find_ffmpeg_binary().as_deref(),
+                &temp_path,
+                &target_path,
             );
+            let _ = fs::remove_file(&temp_path);
+            let final_path = res?;
+            return Ok(final_path.to_string_lossy().into_owned());
         }
         fs::write(&target_path, data).map_err(|error| error.to_string())?;
         let metadata = fs::metadata(&target_path).map_err(|error| error.to_string())?;
         if metadata.len() == 0 {
             let _ = fs::remove_file(&target_path);
             return Err("The saved media file was empty.".to_string());
-        }
-        if media_type.eq_ignore_ascii_case("video") {
-            if let Some(ffmpeg) = downloader::find_ffmpeg_binary() {
-                let _ = downloader::ensure_mp4_aac_audio(&ffmpeg, &target_path, None);
-            }
         }
         Ok(target_path.to_string_lossy().into_owned())
     })
@@ -1961,8 +2083,26 @@ pub fn run() {
             }
             _ => {}
         })
-        .run(tauri::generate_context!())
-        .expect("error while running IG-Now");
+        .build(tauri::generate_context!())
+        .expect("error while building IG-Now")
+        .run(|app_handle, event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen {
+                has_visible_windows: false,
+                ..
+            } = event
+            {
+                if let Some(window) = app_handle.get_webview_window(INSTAGRAM_WINDOW_LABEL) {
+                    let _ = window.unminimize();
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                } else if let Err(error) = launch_instagram_internal(app_handle, false) {
+                    eprintln!("[IG-Now] Failed to reopen Instagram window: {error}");
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app_handle, event);
+        });
 }
 
 #[cfg(test)]
@@ -2097,14 +2237,24 @@ mod download_tests {
 
     #[test]
     fn validates_image_headers_and_removes_html_error_responses() {
-        assert!(super::is_valid_image_header(
+        assert!(crate::downloader::is_valid_image_header(
             b"\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01"
         ));
-        assert!(super::is_valid_image_header(
+        assert!(crate::downloader::is_valid_image_header(
             b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0d"
         ));
-        assert!(super::is_valid_image_header(b"RIFF\x24\x00\x00\x00WEBP"));
-        assert!(!super::is_valid_image_header(b"<!DOCTYPE html><html>"));
+        assert!(crate::downloader::is_valid_image_header(
+            b"RIFF\x24\x00\x00\x00WEBP"
+        ));
+        assert!(crate::downloader::is_valid_image_header(
+            b"\x00\x00\x00\x18ftypavif\x00\x00\x00\x00"
+        ));
+        assert!(!crate::downloader::is_valid_image_header(
+            b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00"
+        ));
+        assert!(!crate::downloader::is_valid_image_header(
+            b"<!DOCTYPE html><html>"
+        ));
 
         let mut p = std::env::temp_dir();
         p.push(format!("ignow-invalid-img-{}.jpg", std::process::id()));
@@ -2215,6 +2365,7 @@ mod download_tests {
                     width: 1080,
                     height: 1920,
                     bandwidth: 3000,
+                    codecs: String::new(),
                     ext: "mp4".to_string(),
                     requires_mux: true,
                     video_url: "https://cdn.instagram.com/v/primary.mp4".to_string(),
@@ -2226,6 +2377,7 @@ mod download_tests {
                     width: 720,
                     height: 1280,
                     bandwidth: 1500,
+                    codecs: String::new(),
                     ext: "mp4".to_string(),
                     requires_mux: false,
                     video_url: "https://cdn.instagram.com/v/fallback.mp4".to_string(),
@@ -2357,5 +2509,51 @@ mod download_tests {
         fs::write(dir.join("renderD129"), b"").unwrap();
         assert!(super::has_drm_render_node_in_dir(&dir));
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn select_fallback_audio_picks_second_format_when_first_matches_chosen_and_tray_reduced_motion_covers_ver(
+    ) {
+        let formats = vec![
+            super::downloader::VideoFormat {
+                id: "fmt-0".to_string(),
+                label: "1080p".to_string(),
+                width: 1080,
+                height: 1920,
+                bandwidth: 3000,
+                codecs: String::new(),
+                ext: "mp4".to_string(),
+                requires_mux: true,
+                video_url: "https://cdn.instagram.com/v/0.mp4".to_string(),
+                audio_url: Some("https://cdn.instagram.com/v/a0.m4a".to_string()),
+            },
+            super::downloader::VideoFormat {
+                id: "fmt-1".to_string(),
+                label: "720p".to_string(),
+                width: 720,
+                height: 1280,
+                bandwidth: 1500,
+                codecs: String::new(),
+                ext: "mp4".to_string(),
+                requires_mux: true,
+                video_url: "https://cdn.instagram.com/v/1.mp4".to_string(),
+                audio_url: Some("https://cdn.instagram.com/v/a1.m4a".to_string()),
+            },
+        ];
+        assert_eq!(
+            super::select_fallback_audio(&formats, Some("https://cdn.instagram.com/v/a0.m4a")),
+            Some("https://cdn.instagram.com/v/a1.m4a".to_string())
+        );
+        assert_eq!(
+            super::select_fallback_audio(&formats, Some("https://cdn.instagram.com/v/a1.m4a")),
+            Some("https://cdn.instagram.com/v/a0.m4a".to_string())
+        );
+        assert!(
+            super::tray::ABOUT_JS.contains(".ignow-ab-ver{transition:none!important;}")
+                || super::tray::ABOUT_JS
+                    .contains("@media (prefers-reduced-motion:reduce){#' + ID + ',#' + ID + '_card,#' + ID + ' .ignow-ab-btn,#' + ID + ' .ignow-ab-ver{transition:none!important;}}")
+                || super::tray::ABOUT_JS.contains(".ignow-ab-ver{transition:none"),
+            "tray::ABOUT_JS prefers-reduced-motion must cover .ignow-ab-ver"
+        );
     }
 }

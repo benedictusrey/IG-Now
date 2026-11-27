@@ -712,3 +712,66 @@ test("20-slide mixed photo+video carousel renders thumbnail strip, honors initia
     win.close();
   }
 });
+
+test("uses Cmd hints on macOS and avoids hardcoded .jpg in single-image in-flight status", async () => {
+  const html = fs.readFileSync(htmlPath, "utf8");
+  const script = fs.readFileSync(scriptPath, "utf8");
+  const dom = new JSDOM(html, {
+    url: "https://tauri.localhost/downloader.html",
+    runScripts: "outside-only"
+  });
+  const win = dom.window;
+  Object.defineProperty(win.navigator, "platform", { value: "MacIntel", configurable: true });
+  let releaseSingle;
+  const imgPost = {
+    shortcode: "C9xImgMac",
+    pk: "123",
+    username: "mac_user",
+    postUrl: "https://www.instagram.com/p/C9xImgMac/",
+    takenAt: "2026-11-16T00:00:00Z",
+    caption: "",
+    ffmpegAvailable: true,
+    items: [{
+      index: 0,
+      kind: "image",
+      thumbnailUrl: "https://cdn.instagram.com/v/pic.png",
+      formats: [{ id: "img-0", label: "1080x1350 JPG", width: 1080, height: 1350, bandwidth: 1458000, ext: "jpg", requiresMux: false, videoUrl: "https://cdn.instagram.com/v/pic.png", audioUrl: null }]
+    }]
+  };
+  win.__TAURI__ = {
+    core: {
+      invoke: async (command) => {
+        if (command === "take_pending_downloader_context") {
+          return { url: imgPost.postUrl, payloadJson: JSON.stringify(imgPost) };
+        }
+        if (command === "inspect_instagram_post") return imgPost;
+        if (command === "download_post_selection") {
+          await new Promise(resolve => { releaseSingle = resolve; });
+          return { savedPaths: ["/Users/u/Downloads/IG-Now/mac_user-20261116-abcdef12.png"], captionPath: null, metadataPath: null, subfolder: null, warning: null };
+        }
+        return null;
+      }
+    }
+  };
+  try {
+    win.eval(script);
+    await new Promise(r => setTimeout(r, 40));
+    const urlInput = win.document.getElementById("url-input");
+    const savedUrl = urlInput.value;
+    win.document.getElementById("clear-url-btn").click();
+    assert(win.document.getElementById("url-hint").textContent.includes("Cmd+L"));
+    urlInput.value = savedUrl;
+    urlInput.dispatchEvent(new win.Event("input"));
+    win.document.getElementById("paste-btn").click();
+    await new Promise(r => setTimeout(r, 15));
+    assert(win.document.getElementById("status-box").textContent.includes("Cmd+V"));
+    win.document.getElementById("download-selected-btn").click();
+    await new Promise(r => setTimeout(r, 15));
+    assert.equal(win.document.getElementById("status-box").textContent, "Saving full-resolution image to Downloads/IG-Now...");
+    releaseSingle();
+    await new Promise(r => setTimeout(r, 20));
+    assert(win.document.getElementById("status-box").textContent.endsWith(".png"));
+  } finally {
+    win.close();
+  }
+});

@@ -4,6 +4,18 @@ All notable changes to **IG-Now** are documented here. The format follows [Keep 
 
 ---
 
+## [2.5.3] — 2026-11-27
+
+### Added
+- **Instagram Notes Music Clip Selector ([issue #8](https://github.com/benedictusrey/IG-Now/issues/8), `frontend/instagram-tools.js`):** Added an Instagram-style dark waveform clip selector modal on `/direct/inbox/` Notes when a track is attached (`Select clip` beside `Remove song`), supporting track metadata interception (`PolarisNotesMusicSearchQuery` / `PolarisNotesMusicPlaylistQuery`), full-track lookup (`POST /api/v1/clips/music/`), adjustable `5s`–`30s` duration pills + slider, 60-bar pointer/keyboard waveform scrubber with `mm:ss` timestamps and highlight chips, live audio preview paused on `__onWindowHidden()`, and request payload patching (`music_note_create_info.start_time` / `duration`).
+- **Electron-for-Linux Release Client (`electron-linux/`):** Packaged Linux x64 builds (`IG-Now_2.5.3_amd64.AppImage`, `IG-Now_2.5.3_amd64.deb`, `IG-Now-2.5.3-1.x86_64.rpm`) using the isolated `electron-linux/` host reusing `frontend/` directly (`persist:profile-personal` session, tray & close-to-tray, DM unread notifications, XDG `.desktop` autostart with `APPIMAGE` path resolution, native Downloader workbench, and WSLg/bare-metal GPU switch tuning), while Windows and macOS remain on Tauri v2 + Rust.
+- **Unified Hybrid CI Release Pipeline (`.github/workflows/release.yml`):** Builds Windows & macOS Tauri packages alongside Electron-for-Linux `.AppImage`, `.deb`, and `.rpm` artifacts, verifies all 7 release asset patterns, and publishes unified `checksums.txt` and `SHA256SUMS.txt` manifests.
+
+### Fixed & Improved
+- **Cross-Platform Video Codec Preference & MP4 Compatibility (`src-tauri/src/downloader.rs`, `src-tauri/src/lib.rs`, `electron-linux/backend.js`, `frontend/instagram-tools.js`):** Ranks DASH & JSON video tracks `avc1` > `hev1`/`hvc1` > `vp09`/`vp9` > `av01` and audio `mp4a` > `opus` at equal resolution; preserves native H.264 `yuv420p` + AAC `+faststart` MP4s byte-for-byte; losslessly remuxes fragmented (`moof`/`styp`) or late-`moov` MP4s with `+faststart`; and transcodes only incompatible video/audio streams (including WebM inputs) to universal H.264 + AAC `.mp4`.
+- **Cross-Platform Image Magic-Byte Validation & Extension Parity (`src-tauri/src/downloader.rs`, `src-tauri/src/lib.rs`, `electron-linux/backend.js`, `frontend/downloader.js`):** Rejects non-image `ftyp` headers (such as `ftypisom`), preserves authentic JPEG/PNG/GIF bytes with matching `.jpg`/`.png`/`.gif` extensions, converts WebP/AVIF/HEIC to `.png` (lossless/alpha) or high-quality `.jpg` via `ffmpeg`, and reports the actual saved path.
+- **macOS Dock, Tray, Shortcuts & Typography (`src-tauri/src/lib.rs`, `src-tauri/src/tray.rs`, `frontend/instagram-tools.js`, `frontend/direct-messages.js`, `frontend/downloader.js`):** Reopens hidden-to-tray windows on macOS Dock icon clicks (`RunEvent::Reopen`), opens the macOS menu-bar tray menu on left-click, adds `Cmd+Click` image zoom and platform-aware `Cmd+L` / `Cmd+V` Downloader hints, switches `.ignow-dmlink` to the cross-platform system font stack, and suppresses Linux-only `dead_code` warnings on non-Linux Rust builds.
+
 ## [2.5.2] — 2026-11-26
 
 ### Fixed

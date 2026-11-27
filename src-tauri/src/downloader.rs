@@ -3,7 +3,7 @@ use std::{
     env,
     ffi::OsStr,
     fs,
-    io::Write,
+    io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
     sync::{
@@ -45,6 +45,8 @@ pub struct VideoFormat {
     pub width: u32,
     pub height: u32,
     pub bandwidth: u64,
+    #[serde(default)]
+    pub codecs: String,
     pub ext: String,
     pub requires_mux: bool,
     pub video_url: String,
@@ -356,6 +358,38 @@ fn extract_tag_inner(block: &str, tag: &str) -> Option<String> {
     Some(block[gt..end].trim().to_string())
 }
 
+pub fn video_codec_rank(codecs: &str) -> u8 {
+    let c = codecs.trim().to_ascii_lowercase();
+    if c.is_empty() {
+        return 2;
+    }
+    if c.contains("avc1") || c.contains("avc3") || c.contains("h264") {
+        4
+    } else if c.contains("hev1") || c.contains("hvc1") || c.contains("hevc") {
+        3
+    } else if c.contains("vp09") || c.contains("vp9") || c.contains("vp8") {
+        1
+    } else if c.contains("av01") || c.contains("av1") {
+        0
+    } else {
+        2
+    }
+}
+
+pub fn audio_codec_rank(codecs: &str) -> u8 {
+    let c = codecs.trim().to_ascii_lowercase();
+    if c.is_empty() {
+        return 2;
+    }
+    if c.contains("mp4a") || c.contains("aac") {
+        3
+    } else if c.contains("opus") {
+        0
+    } else {
+        1
+    }
+}
+
 pub fn parse_dash_manifest(xml: &str) -> (Vec<DashTrack>, Vec<DashTrack>) {
     if xml.trim().is_empty() || !xml.to_ascii_lowercase().contains("<baseurl") {
         return (Vec::new(), Vec::new());
@@ -422,9 +456,14 @@ pub fn parse_dash_manifest(xml: &str) -> (Vec<DashTrack>, Vec<DashTrack>) {
         let area_b = (b.width as u64) * (b.height as u64);
         area_b
             .cmp(&area_a)
+            .then_with(|| video_codec_rank(&b.codecs).cmp(&video_codec_rank(&a.codecs)))
             .then_with(|| b.bandwidth.cmp(&a.bandwidth))
     });
-    audios.sort_by(|a, b| b.bandwidth.cmp(&a.bandwidth));
+    audios.sort_by(|a, b| {
+        audio_codec_rank(&b.codecs)
+            .cmp(&audio_codec_rank(&a.codecs))
+            .then_with(|| b.bandwidth.cmp(&a.bandwidth))
+    });
     (videos, audios)
 }
 
@@ -479,6 +518,11 @@ fn video_formats_from_node(node: &Value, has_ffmpeg: bool) -> (Vec<VideoFormat>,
                 .get("bandwidth")
                 .and_then(|v| v.as_u64())
                 .unwrap_or((width as u64) * (height as u64));
+            let codecs = entry
+                .get("codecs")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
             push_unique_format(
                 &mut formats,
                 VideoFormat {
@@ -487,6 +531,7 @@ fn video_formats_from_node(node: &Value, has_ffmpeg: bool) -> (Vec<VideoFormat>,
                     width,
                     height,
                     bandwidth,
+                    codecs,
                     ext: "mp4".to_string(),
                     requires_mux: false,
                     video_url: url,
@@ -516,6 +561,7 @@ fn video_formats_from_node(node: &Value, has_ffmpeg: bool) -> (Vec<VideoFormat>,
                     width: w,
                     height: h,
                     bandwidth: (w as u64) * (h as u64),
+                    codecs: String::new(),
                     ext: "mp4".to_string(),
                     requires_mux: false,
                     video_url: url,
@@ -546,6 +592,7 @@ fn video_formats_from_node(node: &Value, has_ffmpeg: bool) -> (Vec<VideoFormat>,
                     width: track.width,
                     height: track.height,
                     bandwidth: track.bandwidth,
+                    codecs: track.codecs,
                     ext: "mp4".to_string(),
                     requires_mux: best_audio.is_some(),
                     video_url: track.url,
@@ -568,9 +615,13 @@ fn video_formats_from_node(node: &Value, has_ffmpeg: bool) -> (Vec<VideoFormat>,
         if res_cmp != std::cmp::Ordering::Equal {
             return res_cmp;
         }
+        let codec_cmp = video_codec_rank(&b.codecs).cmp(&video_codec_rank(&a.codecs));
+        if codec_cmp != std::cmp::Ordering::Equal {
+            return codec_cmp;
+        }
         if has_ffmpeg {
-            // At equal resolution, prefer explicit DASH Video + AAC Audio muxing over raw progressive URLs
-            // because some Instagram `video_versions` streams ship video-only at 1080p.
+            // At equal resolution & codec preference, prefer explicit DASH Video + AAC Audio muxing
+            // over raw progressive URLs because some Instagram `video_versions` ship video-only at 1080p.
             let dash_pref = b.requires_mux.cmp(&a.requires_mux);
             if dash_pref != std::cmp::Ordering::Equal {
                 return dash_pref;
@@ -612,6 +663,7 @@ fn image_formats_from_node(node: &Value) -> (Vec<VideoFormat>, Option<String>) {
                     width,
                     height,
                     bandwidth: (width as u64) * (height as u64),
+                    codecs: String::new(),
                     ext: "jpg".to_string(),
                     requires_mux: false,
                     video_url: url,
@@ -650,6 +702,7 @@ fn image_formats_from_node(node: &Value) -> (Vec<VideoFormat>, Option<String>) {
                     width,
                     height,
                     bandwidth: (width as u64) * (height as u64),
+                    codecs: String::new(),
                     ext: "jpg".to_string(),
                     requires_mux: false,
                     video_url: url,
@@ -685,6 +738,7 @@ fn image_formats_from_node(node: &Value) -> (Vec<VideoFormat>, Option<String>) {
                     width,
                     height,
                     bandwidth: (width as u64) * (height as u64),
+                    codecs: String::new(),
                     ext: "jpg".to_string(),
                     requires_mux: false,
                     video_url: url,
@@ -1085,6 +1139,7 @@ pub fn extract_post_from_html(
                 width: 0,
                 height: 0,
                 bandwidth: 0,
+                codecs: String::new(),
                 ext: "mp4".to_string(),
                 requires_mux: false,
                 video_url: url,
@@ -1102,6 +1157,7 @@ pub fn extract_post_from_html(
                 width: 0,
                 height: 0,
                 bandwidth: 0,
+                codecs: String::new(),
                 ext: "jpg".to_string(),
                 requires_mux: false,
                 video_url: url,
@@ -1184,58 +1240,6 @@ pub fn find_ffmpeg_binary() -> Option<PathBuf> {
         .clone()
 }
 
-pub fn mux_video_audio_ffmpeg(
-    ffmpeg: &Path,
-    video_path: &Path,
-    audio_path: &Path,
-    out_path: &Path,
-) -> Result<(), String> {
-    let mut cmd = Command::new(ffmpeg);
-    apply_no_window(&mut cmd);
-    let output = cmd
-        .args(["-y", "-fflags", "+genpts", "-i"])
-        .arg(video_path)
-        .arg("-i")
-        .arg(audio_path)
-        .args([
-            "-map",
-            "0:v:0",
-            "-map",
-            "1:a:0",
-            "-c:v",
-            "copy",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "192k",
-            "-ac",
-            "2",
-            "-ar",
-            "44100",
-            "-shortest",
-            "-movflags",
-            "+faststart",
-        ])
-        .arg(out_path)
-        .output()
-        .map_err(|e| format!("Failed to start ffmpeg: {e}"))?;
-    if !output.status.success() {
-        let _ = fs::remove_file(out_path);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let tail: String = stderr.lines().rev().take(4).collect::<Vec<_>>().join(" | ");
-        return Err(format!(
-            "ffmpeg exited with status {}: {tail}",
-            output.status
-        ));
-    }
-    let meta = fs::metadata(out_path).map_err(|e| e.to_string())?;
-    if meta.len() == 0 {
-        let _ = fs::remove_file(out_path);
-        return Err("ffmpeg produced an empty MP4 output file.".to_string());
-    }
-    Ok(())
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mp4AudioState {
     Aac,
@@ -1243,57 +1247,357 @@ pub enum Mp4AudioState {
     Missing,
 }
 
-pub fn probe_mp4_audio_state(ffmpeg: &Path, path: &Path) -> Mp4AudioState {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Mp4Layout {
+    pub is_mp4: bool,
+    pub has_ftyp: bool,
+    pub has_moov: bool,
+    pub has_mdat: bool,
+    pub is_fragmented: bool,
+    pub moov_before_mdat: bool,
+    pub is_faststart: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaStreamsInfo {
+    pub container: String,
+    pub video_codec: String,
+    pub pix_fmt: String,
+    pub audio_codec: String,
+    pub audio_state: Mp4AudioState,
+    pub layout: Mp4Layout,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageFormatKind {
+    Jpg,
+    Png,
+    Gif,
+    Webp,
+    Avif,
+    Heic,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImageFormat {
+    pub kind: ImageFormatKind,
+    pub ext: &'static str,
+    pub is_lossless_or_alpha: bool,
+}
+
+pub fn is_valid_mp4_header(bytes: &[u8]) -> bool {
+    bytes.len() >= 8
+        && matches!(
+            &bytes[4..8],
+            b"ftyp" | b"styp" | b"wide" | b"free" | b"moov"
+        )
+}
+
+pub fn is_valid_webm_header(bytes: &[u8]) -> bool {
+    bytes.len() >= 4 && bytes[0..4] == [0x1a, 0x45, 0xdf, 0xa3]
+}
+
+pub fn is_valid_download_video_header(bytes: &[u8], allow_webm: bool) -> bool {
+    is_valid_mp4_header(bytes) || (allow_webm && is_valid_webm_header(bytes))
+}
+
+pub fn detect_image_format(bytes: &[u8]) -> Option<ImageFormat> {
+    if bytes.len() < 6 {
+        return None;
+    }
+    if bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF {
+        return Some(ImageFormat {
+            kind: ImageFormatKind::Jpg,
+            ext: "jpg",
+            is_lossless_or_alpha: false,
+        });
+    }
+    if bytes.len() >= 8 && &bytes[0..8] == b"\x89PNG\r\n\x1a\n" {
+        return Some(ImageFormat {
+            kind: ImageFormatKind::Png,
+            ext: "png",
+            is_lossless_or_alpha: true,
+        });
+    }
+    if &bytes[0..6] == b"GIF87a" || &bytes[0..6] == b"GIF89a" {
+        return Some(ImageFormat {
+            kind: ImageFormatKind::Gif,
+            ext: "gif",
+            is_lossless_or_alpha: true,
+        });
+    }
+    if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        let chunk = bytes.get(12..16).unwrap_or(b"");
+        let is_lossless_or_alpha =
+            chunk == b"VP8L" || (chunk == b"VP8X" && bytes.len() >= 21 && (bytes[20] & 0x10) != 0);
+        return Some(ImageFormat {
+            kind: ImageFormatKind::Webp,
+            ext: "webp",
+            is_lossless_or_alpha,
+        });
+    }
+    if bytes.len() >= 12 && &bytes[4..8] == b"ftyp" {
+        const IMAGE_BRANDS: &[&str] = &[
+            "avif", "avis", "heic", "heix", "hevc", "hevx", "mif1", "msf1",
+        ];
+        let mut brands = vec![String::from_utf8_lossy(&bytes[8..12]).to_ascii_lowercase()];
+        let limit = bytes.len().min(64);
+        let mut i = 16;
+        while i + 4 <= limit {
+            brands.push(String::from_utf8_lossy(&bytes[i..i + 4]).to_ascii_lowercase());
+            i += 4;
+        }
+        if !brands.iter().any(|b| IMAGE_BRANDS.contains(&b.as_str())) {
+            return None;
+        }
+        let is_avif = brands.iter().any(|b| b == "avif" || b == "avis");
+        return Some(if is_avif {
+            ImageFormat {
+                kind: ImageFormatKind::Avif,
+                ext: "avif",
+                is_lossless_or_alpha: false,
+            }
+        } else {
+            ImageFormat {
+                kind: ImageFormatKind::Heic,
+                ext: "heic",
+                is_lossless_or_alpha: false,
+            }
+        });
+    }
+    None
+}
+
+pub fn is_valid_image_header(bytes: &[u8]) -> bool {
+    detect_image_format(bytes).is_some()
+}
+
+pub fn replace_path_extension(path: &Path, new_ext: &str) -> PathBuf {
+    path.with_extension(new_ext.trim_start_matches('.'))
+}
+
+fn read_file_head(path: &Path, max_bytes: usize) -> Result<Vec<u8>, String> {
+    let mut file = fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut buf = vec![0_u8; max_bytes];
+    let n = file.read(&mut buf).map_err(|e| e.to_string())?;
+    buf.truncate(n);
+    Ok(buf)
+}
+
+fn split_top_level_comma(text: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    for (idx, ch) in text.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' if depth > 0 => depth -= 1,
+            ',' if depth == 0 => {
+                parts.push(text[start..idx].trim());
+                start = idx + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(text[start..].trim());
+    parts
+}
+
+pub fn inspect_mp4_layout(path: &Path) -> Mp4Layout {
+    let mut result = Mp4Layout::default();
+    let Ok(mut file) = fs::File::open(path) else {
+        return result;
+    };
+    let Ok(meta) = file.metadata() else {
+        return result;
+    };
+    let file_size = meta.len();
+    let mut pos: u64 = 0;
+    let mut first_box: Option<[u8; 4]> = None;
+    let mut moov_pos: Option<u64> = None;
+    let mut mdat_pos: Option<u64> = None;
+    let mut header = [0_u8; 16];
+
+    for _ in 0..4096 {
+        if pos + 8 > file_size {
+            break;
+        }
+        if file.seek(SeekFrom::Start(pos)).is_err() {
+            break;
+        }
+        let Ok(n) = file.read(&mut header[..8]) else {
+            break;
+        };
+        if n < 8 {
+            break;
+        }
+        let size32 = u32::from_be_bytes([header[0], header[1], header[2], header[3]]);
+        let box_type: [u8; 4] = [header[4], header[5], header[6], header[7]];
+        if !box_type.iter().all(|&b| (0x20..=0x7e).contains(&b)) {
+            break;
+        }
+        let box_size: u64 = if size32 == 1 {
+            if pos + 16 > file_size {
+                break;
+            }
+            if file.read_exact(&mut header[8..16]).is_err() {
+                break;
+            }
+            let big = u64::from_be_bytes([
+                header[8], header[9], header[10], header[11], header[12], header[13], header[14],
+                header[15],
+            ]);
+            if big < 16 || pos.saturating_add(big) > file_size {
+                break;
+            }
+            big
+        } else if size32 == 0 {
+            file_size - pos
+        } else {
+            u64::from(size32)
+        };
+
+        if box_size < 8 || pos.saturating_add(box_size) > file_size {
+            break;
+        }
+        if first_box.is_none() {
+            first_box = Some(box_type);
+        }
+        if &box_type == b"ftyp" {
+            result.has_ftyp = true;
+        } else if &box_type == b"moov" && moov_pos.is_none() {
+            result.has_moov = true;
+            moov_pos = Some(pos);
+        } else if &box_type == b"mdat" && mdat_pos.is_none() {
+            result.has_mdat = true;
+            mdat_pos = Some(pos);
+        } else if &box_type == b"moof" {
+            result.is_fragmented = true;
+        }
+        pos += box_size;
+    }
+
+    if first_box.as_ref() == Some(b"styp") {
+        result.is_fragmented = true;
+    }
+    result.is_mp4 = result.has_ftyp
+        || matches!(
+            first_box.as_ref(),
+            Some(b"styp" | b"moov" | b"wide" | b"free")
+        );
+    result.moov_before_mdat = match (moov_pos, mdat_pos) {
+        (Some(moov), Some(mdat)) => moov < mdat,
+        (Some(_), None) => true,
+        _ => false,
+    };
+    result.is_faststart =
+        result.has_ftyp && result.has_moov && !result.is_fragmented && result.moov_before_mdat;
+    result
+}
+
+pub fn probe_media_streams(ffmpeg: &Path, path: &Path) -> MediaStreamsInfo {
+    let mut layout = inspect_mp4_layout(path);
+    let mut info = MediaStreamsInfo {
+        container: String::new(),
+        video_codec: String::new(),
+        pix_fmt: String::new(),
+        audio_codec: String::new(),
+        audio_state: Mp4AudioState::Missing,
+        layout: layout.clone(),
+    };
     let mut cmd = Command::new(ffmpeg);
     apply_no_window(&mut cmd);
     let Ok(out) = cmd.arg("-i").arg(path).output() else {
-        return Mp4AudioState::Missing;
+        return info;
     };
-    let info = String::from_utf8_lossy(&out.stderr);
-    for line in info.lines() {
-        if let Some(pos) = line.find("Audio:") {
-            let tail = line[pos + 6..].trim().to_ascii_lowercase();
-            return if tail.starts_with("aac") {
-                Mp4AudioState::Aac
-            } else {
-                Mp4AudioState::NonAac
-            };
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    for line in stderr.lines() {
+        let trimmed = line.trim_start();
+        if info.container.is_empty() {
+            if let Some(after) = trimmed.strip_prefix("Input #0,") {
+                if let Some(from_idx) = after.find(" from ") {
+                    info.container = after[..from_idx].trim().to_ascii_lowercase();
+                }
+            }
+        }
+        if info.video_codec.is_empty() {
+            if let Some(v_pos) = line.find("Video:") {
+                let parts = split_top_level_comma(line[v_pos + 6..].trim());
+                if let Some(first) = parts.first() {
+                    let codec: String = first
+                        .to_ascii_lowercase()
+                        .chars()
+                        .take_while(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '+' | '-'))
+                        .collect();
+                    if !codec.is_empty() {
+                        info.video_codec = codec;
+                    }
+                }
+                if let Some(second) = parts.get(1) {
+                    let pix: String = second
+                        .to_ascii_lowercase()
+                        .chars()
+                        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                        .collect();
+                    if !pix.is_empty() {
+                        info.pix_fmt = pix;
+                    }
+                }
+            }
+        }
+        if info.audio_codec.is_empty() {
+            if let Some(a_pos) = line.find("Audio:") {
+                let tail = line[a_pos + 6..].trim().to_ascii_lowercase();
+                let codec: String = tail
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '+' | '-'))
+                    .collect();
+                if !codec.is_empty() {
+                    info.audio_state = if codec == "aac" {
+                        Mp4AudioState::Aac
+                    } else {
+                        Mp4AudioState::NonAac
+                    };
+                    info.audio_codec = codec;
+                }
+            }
         }
     }
-    Mp4AudioState::Missing
+    if !layout.is_mp4 && (info.container.contains("mp4") || info.container.contains("mov")) {
+        layout.is_mp4 = true;
+    }
+    info.layout = layout;
+    info
 }
 
-pub fn transcode_mp4_audio_to_aac(ffmpeg: &Path, mp4_path: &Path) -> Result<(), String> {
-    let temp_out = unique_temp_media_path_near(mp4_path, "aacfix", "mp4");
+fn run_ffmpeg_to_atomic_output<I, S>(
+    ffmpeg: &Path,
+    args: I,
+    out_path: &Path,
+    tag: &str,
+    ext: &str,
+    label: &str,
+) -> Result<(), String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let temp_out = unique_temp_media_path_near(out_path, tag, ext);
     let mut cmd = Command::new(ffmpeg);
     apply_no_window(&mut cmd);
     let output = cmd
-        .args(["-y", "-fflags", "+genpts", "-i"])
-        .arg(mp4_path)
-        .args([
-            "-map",
-            "0:v:0",
-            "-map",
-            "0:a:0",
-            "-c:v",
-            "copy",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "192k",
-            "-ac",
-            "2",
-            "-ar",
-            "44100",
-            "-movflags",
-            "+faststart",
-        ])
+        .args(args)
         .arg(&temp_out)
         .output()
         .map_err(|e| format!("Failed to start ffmpeg: {e}"))?;
     if !output.status.success() {
         let _ = fs::remove_file(&temp_out);
-        return Err(format!("ffmpeg AAC conversion exited {}", output.status));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let tail: String = stderr.lines().rev().take(4).collect::<Vec<_>>().join(" | ");
+        return Err(format!(
+            "ffmpeg {label} exited with status {}: {tail}",
+            output.status
+        ));
     }
     let meta = fs::metadata(&temp_out).map_err(|e| {
         let _ = fs::remove_file(&temp_out);
@@ -1301,88 +1605,351 @@ pub fn transcode_mp4_audio_to_aac(ffmpeg: &Path, mp4_path: &Path) -> Result<(), 
     })?;
     if meta.len() == 0 {
         let _ = fs::remove_file(&temp_out);
-        return Err("ffmpeg AAC conversion produced an empty file.".to_string());
+        return Err(format!("ffmpeg {label} produced an empty output file."));
     }
-    replace_file_atomically(&temp_out, mp4_path)?;
+    replace_file_atomically(&temp_out, out_path)?;
     Ok(())
 }
 
+fn paths_refer_to_same_file(a: &Path, b: &Path) -> bool {
+    if a == b {
+        return true;
+    }
+    if !b.exists() {
+        return false;
+    }
+    matches!(
+        (fs::canonicalize(a), fs::canonicalize(b)),
+        (Ok(ca), Ok(cb)) if ca == cb
+    )
+}
+
+pub fn mux_video_audio_ffmpeg_with_streams(
+    ffmpeg: &Path,
+    video_path: &Path,
+    audio_path: &Path,
+    out_path: &Path,
+    preprobed_video: Option<&MediaStreamsInfo>,
+) -> Result<(), String> {
+    let owned_v;
+    let v_streams = match preprobed_video {
+        Some(s) => s,
+        None => {
+            owned_v = probe_media_streams(ffmpeg, video_path);
+            &owned_v
+        }
+    };
+    let a_streams = probe_media_streams(ffmpeg, audio_path);
+    let video_ok = v_streams.video_codec == "h264" && v_streams.pix_fmt == "yuv420p";
+    let audio_ok = a_streams.audio_state == Mp4AudioState::Aac;
+
+    let mut args: Vec<std::ffi::OsString> = vec![
+        "-y".into(),
+        "-fflags".into(),
+        "+genpts".into(),
+        "-i".into(),
+        video_path.as_os_str().to_os_string(),
+        "-i".into(),
+        audio_path.as_os_str().to_os_string(),
+        "-map".into(),
+        "0:v:0".into(),
+        "-map".into(),
+        "1:a:0".into(),
+    ];
+    if video_ok {
+        args.extend(["-c:v".into(), "copy".into()]);
+    } else {
+        args.extend([
+            "-c:v".into(),
+            "libx264".into(),
+            "-crf".into(),
+            "16".into(),
+            "-preset".into(),
+            "medium".into(),
+            "-pix_fmt".into(),
+            "yuv420p".into(),
+        ]);
+    }
+    if audio_ok {
+        args.extend(["-c:a".into(), "copy".into()]);
+    } else {
+        args.extend([
+            "-c:a".into(),
+            "aac".into(),
+            "-b:a".into(),
+            "192k".into(),
+            "-ac".into(),
+            "2".into(),
+            "-ar".into(),
+            "44100".into(),
+        ]);
+    }
+    args.extend(["-shortest".into(), "-movflags".into(), "+faststart".into()]);
+    run_ffmpeg_to_atomic_output(ffmpeg, args, out_path, "mux", "mp4", "muxing")
+}
+
+pub fn mux_video_audio_ffmpeg(
+    ffmpeg: &Path,
+    video_path: &Path,
+    audio_path: &Path,
+    out_path: &Path,
+) -> Result<(), String> {
+    mux_video_audio_ffmpeg_with_streams(ffmpeg, video_path, audio_path, out_path, None)
+}
+
+#[allow(dead_code)]
+pub fn probe_mp4_audio_state(ffmpeg: &Path, path: &Path) -> Mp4AudioState {
+    probe_media_streams(ffmpeg, path).audio_state
+}
+
+pub fn normalize_video_mp4_with_streams(
+    ffmpeg: &Path,
+    input_path: &Path,
+    fallback_audio_path: Option<&Path>,
+    out_path: &Path,
+    preprobed: Option<&MediaStreamsInfo>,
+) -> Result<Option<String>, String> {
+    let owned;
+    let streams = match preprobed {
+        Some(s) => s,
+        None => {
+            owned = probe_media_streams(ffmpeg, input_path);
+            &owned
+        }
+    };
+    if streams.video_codec.is_empty() {
+        return Err("The downloaded video contained no decodable video stream.".to_string());
+    }
+    if streams.audio_state == Mp4AudioState::Missing {
+        if let Some(aud) = fallback_audio_path {
+            mux_video_audio_ffmpeg_with_streams(ffmpeg, input_path, aud, out_path, Some(streams))?;
+            return Ok(None);
+        }
+    }
+
+    let video_ok = streams.video_codec == "h264" && streams.pix_fmt == "yuv420p";
+    let has_audio = streams.audio_state != Mp4AudioState::Missing;
+    let audio_ok = streams.audio_state == Mp4AudioState::Aac;
+    let container_ok =
+        streams.layout.is_mp4 && !streams.layout.is_fragmented && streams.layout.is_faststart;
+    let warning = if has_audio {
+        None
+    } else {
+        Some("This Instagram source video had no audio track in the stream.".to_string())
+    };
+
+    if video_ok && (audio_ok || !has_audio) && container_ok {
+        if !paths_refer_to_same_file(input_path, out_path) {
+            let temp_copy = unique_temp_media_path_near(out_path, "vcopy", "mp4");
+            if let Err(err) = fs::copy(input_path, &temp_copy) {
+                let _ = fs::remove_file(&temp_copy);
+                return Err(err.to_string());
+            }
+            if let Err(err) = replace_file_atomically(&temp_copy, out_path) {
+                let _ = fs::remove_file(&temp_copy);
+                return Err(err);
+            }
+        }
+        return Ok(warning);
+    }
+
+    let mut args: Vec<std::ffi::OsString> = vec![
+        "-y".into(),
+        "-fflags".into(),
+        "+genpts".into(),
+        "-i".into(),
+        input_path.as_os_str().to_os_string(),
+        "-map".into(),
+        "0:v:0".into(),
+    ];
+    if has_audio {
+        args.extend(["-map".into(), "0:a:0".into()]);
+    }
+    if video_ok {
+        args.extend(["-c:v".into(), "copy".into()]);
+    } else {
+        args.extend([
+            "-c:v".into(),
+            "libx264".into(),
+            "-crf".into(),
+            "16".into(),
+            "-preset".into(),
+            "medium".into(),
+            "-pix_fmt".into(),
+            "yuv420p".into(),
+        ]);
+    }
+    if has_audio {
+        if audio_ok {
+            args.extend(["-c:a".into(), "copy".into()]);
+        } else {
+            args.extend([
+                "-c:a".into(),
+                "aac".into(),
+                "-b:a".into(),
+                "192k".into(),
+                "-ac".into(),
+                "2".into(),
+                "-ar".into(),
+                "44100".into(),
+            ]);
+        }
+    }
+    args.extend(["-movflags".into(), "+faststart".into()]);
+    run_ffmpeg_to_atomic_output(ffmpeg, args, out_path, "vnorm", "mp4", "normalization")?;
+    Ok(warning)
+}
+
+pub fn normalize_video_mp4(
+    ffmpeg: &Path,
+    input_path: &Path,
+    fallback_audio_path: Option<&Path>,
+    out_path: &Path,
+) -> Result<Option<String>, String> {
+    normalize_video_mp4_with_streams(ffmpeg, input_path, fallback_audio_path, out_path, None)
+}
+
+#[allow(dead_code)]
+pub fn transcode_mp4_audio_to_aac(ffmpeg: &Path, mp4_path: &Path) -> Result<(), String> {
+    normalize_video_mp4(ffmpeg, mp4_path, None, mp4_path).map(|_| ())
+}
+
 /// Extracts or encodes an audio-only `.m4a` (AAC stereo 192 kbps) track from any video or audio file.
+pub fn extract_audio_aac_m4a_ffmpeg_with_streams(
+    ffmpeg: &Path,
+    input_path: &Path,
+    out_path: &Path,
+    preprobed: Option<&MediaStreamsInfo>,
+) -> Result<(), String> {
+    let owned;
+    let streams = match preprobed {
+        Some(s) => s,
+        None => {
+            owned = probe_media_streams(ffmpeg, input_path);
+            &owned
+        }
+    };
+    let mut args: Vec<std::ffi::OsString> = vec![
+        "-y".into(),
+        "-fflags".into(),
+        "+genpts".into(),
+        "-i".into(),
+        input_path.as_os_str().to_os_string(),
+        "-vn".into(),
+        "-map".into(),
+        "0:a:0".into(),
+    ];
+    if streams.audio_state == Mp4AudioState::Aac && streams.layout.is_mp4 {
+        args.extend(["-c:a".into(), "copy".into()]);
+    } else {
+        args.extend([
+            "-c:a".into(),
+            "aac".into(),
+            "-b:a".into(),
+            "192k".into(),
+            "-ac".into(),
+            "2".into(),
+            "-ar".into(),
+            "44100".into(),
+        ]);
+    }
+    args.extend(["-movflags".into(), "+faststart".into()]);
+    run_ffmpeg_to_atomic_output(ffmpeg, args, out_path, "m4a", "m4a", "audio extraction")
+}
+
 pub fn extract_audio_aac_m4a_ffmpeg(
     ffmpeg: &Path,
     input_path: &Path,
     out_path: &Path,
 ) -> Result<(), String> {
-    let mut cmd = Command::new(ffmpeg);
-    apply_no_window(&mut cmd);
-    let output = cmd
-        .args(["-y", "-fflags", "+genpts", "-i"])
-        .arg(input_path)
-        .args([
-            "-vn",
-            "-map",
-            "0:a:0",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "192k",
-            "-ac",
-            "2",
-            "-ar",
-            "44100",
-            "-movflags",
-            "+faststart",
-        ])
-        .arg(out_path)
-        .output()
-        .map_err(|e| format!("Failed to start ffmpeg: {e}"))?;
-    if !output.status.success() {
-        let _ = fs::remove_file(out_path);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let tail: String = stderr.lines().rev().take(4).collect::<Vec<_>>().join(" | ");
-        return Err(format!(
-            "ffmpeg audio extraction exited with status {}: {tail}",
-            output.status
-        ));
-    }
-    let meta = fs::metadata(out_path).map_err(|e| e.to_string())?;
-    if meta.len() == 0 {
-        let _ = fs::remove_file(out_path);
-        return Err("ffmpeg audio extraction produced an empty file.".to_string());
-    }
-    Ok(())
+    extract_audio_aac_m4a_ffmpeg_with_streams(ffmpeg, input_path, out_path, None)
 }
 
-/// Ensures `mp4_path` contains a valid AAC audio track when possible:
-/// - already AAC -> keeps as-is (`Ok(None)`)
-/// - non-AAC audio -> remuxes + encodes AAC (`Ok(None)`)
-/// - missing audio -> muxes `fallback_audio_path` as AAC if given, else warns
+/// Ensures `mp4_path` is an unfragmented `+faststart` H.264 `yuv420p` + AAC `.mp4`.
+#[allow(dead_code)]
 pub fn ensure_mp4_aac_audio(
     ffmpeg: &Path,
     mp4_path: &Path,
     fallback_audio_path: Option<&Path>,
 ) -> Result<Option<String>, String> {
-    match probe_mp4_audio_state(ffmpeg, mp4_path) {
-        Mp4AudioState::Aac => Ok(None),
-        Mp4AudioState::NonAac => {
-            transcode_mp4_audio_to_aac(ffmpeg, mp4_path)?;
-            Ok(None)
-        }
-        Mp4AudioState::Missing => {
-            if let Some(aud) = fallback_audio_path {
-                let temp_out = unique_temp_media_path_near(mp4_path, "aacmux", "mp4");
-                if let Err(err) = mux_video_audio_ffmpeg(ffmpeg, mp4_path, aud, &temp_out) {
-                    let _ = fs::remove_file(&temp_out);
-                    return Err(err);
-                }
-                replace_file_atomically(&temp_out, mp4_path)?;
-                return Ok(None);
+    normalize_video_mp4(ffmpeg, mp4_path, fallback_audio_path, mp4_path)
+}
+
+fn is_alpha_or_lossless_pix_fmt(pix_fmt: &str) -> bool {
+    let lower = pix_fmt.to_ascii_lowercase();
+    [
+        "rgba", "bgra", "argb", "abgr", "yuva", "gbrap", "pal8", "ya8", "ya16",
+    ]
+    .iter()
+    .any(|pat| lower.contains(pat))
+}
+
+pub fn normalize_image_file(
+    ffmpeg: Option<&Path>,
+    input_path: &Path,
+    target_path: &Path,
+) -> Result<PathBuf, String> {
+    let head = read_file_head(input_path, 64)?;
+    let detected = detect_image_format(&head).ok_or_else(|| {
+        "Instagram returned a non-image response (expired link or login page).".to_string()
+    })?;
+
+    let passthrough = matches!(
+        detected.kind,
+        ImageFormatKind::Jpg | ImageFormatKind::Png | ImageFormatKind::Gif
+    ) || ffmpeg.is_none();
+
+    if passthrough {
+        let final_path = replace_path_extension(target_path, detected.ext);
+        if !paths_refer_to_same_file(input_path, &final_path) {
+            let temp_copy = unique_temp_media_path_near(&final_path, "imgcopy", detected.ext);
+            if let Err(err) = fs::copy(input_path, &temp_copy) {
+                let _ = fs::remove_file(&temp_copy);
+                return Err(err.to_string());
             }
-            Ok(Some(
-                "This Instagram source video had no audio track in the stream.".to_string(),
-            ))
+            if let Err(err) = replace_file_atomically(&temp_copy, &final_path) {
+                let _ = fs::remove_file(&temp_copy);
+                return Err(err);
+            }
         }
+        return Ok(final_path);
     }
+
+    let ff = ffmpeg.expect("checked above");
+    let use_png = detected.is_lossless_or_alpha || {
+        let streams = probe_media_streams(ff, input_path);
+        is_alpha_or_lossless_pix_fmt(&streams.pix_fmt)
+    };
+    let out_ext = if use_png { "png" } else { "jpg" };
+    let final_path = replace_path_extension(target_path, out_ext);
+    let mut args: Vec<std::ffi::OsString> = vec![
+        "-y".into(),
+        "-i".into(),
+        input_path.as_os_str().to_os_string(),
+        "-frames:v".into(),
+        "1".into(),
+    ];
+    if use_png {
+        args.extend(["-c:v".into(), "png".into()]);
+    } else {
+        args.extend([
+            "-c:v".into(),
+            "mjpeg".into(),
+            "-q:v".into(),
+            "1".into(),
+            "-qmin".into(),
+            "1".into(),
+        ]);
+    }
+    run_ffmpeg_to_atomic_output(
+        ff,
+        args,
+        &final_path,
+        "imgconv",
+        out_ext,
+        "image conversion",
+    )?;
+    Ok(final_path)
 }
 
 pub fn build_source_filename_stem(username: &str, taken_at: &str, shortcode: &str) -> String {
@@ -2003,7 +2570,9 @@ mod tests {
         let aud = unique_temp_media_path("t-aud", "opus");
         let out = unique_temp_media_path("t-out", "mp4");
 
-        let v_status = Command::new(&ffmpeg)
+        let mut v_cmd = Command::new(&ffmpeg);
+        apply_no_window(&mut v_cmd);
+        let v_status = v_cmd
             .args([
                 "-y",
                 "-f",
@@ -2018,7 +2587,9 @@ mod tests {
             .arg(&vid)
             .status()
             .expect("spawn ffmpeg test vid");
-        let a_status = Command::new(&ffmpeg)
+        let mut a_cmd = Command::new(&ffmpeg);
+        apply_no_window(&mut a_cmd);
+        let a_status = a_cmd
             .args([
                 "-y",
                 "-f",
@@ -2039,11 +2610,9 @@ mod tests {
 
         let res = mux_video_audio_ffmpeg(&ffmpeg, &vid, &aud, &out);
         let probe_err = if res.is_ok() {
-            let info = Command::new(&ffmpeg)
-                .arg("-i")
-                .arg(&out)
-                .output()
-                .expect("probe");
+            let mut probe_cmd = Command::new(&ffmpeg);
+            apply_no_window(&mut probe_cmd);
+            let info = probe_cmd.arg("-i").arg(&out).output().expect("probe");
             String::from_utf8_lossy(&info.stderr).into_owned()
         } else {
             String::new()
@@ -2073,7 +2642,9 @@ mod tests {
         };
         let vid = unique_temp_media_path("t-av", "mp4");
         let out = unique_temp_media_path("t-m4a", "m4a");
-        let status = Command::new(&ffmpeg)
+        let mut cmd = Command::new(&ffmpeg);
+        apply_no_window(&mut cmd);
+        let status = cmd
             .args([
                 "-y",
                 "-f",
@@ -2100,11 +2671,9 @@ mod tests {
         }
         let res = extract_audio_aac_m4a_ffmpeg(&ffmpeg, &vid, &out);
         let probe_err = if res.is_ok() {
-            let info = Command::new(&ffmpeg)
-                .arg("-i")
-                .arg(&out)
-                .output()
-                .expect("probe m4a");
+            let mut probe_cmd = Command::new(&ffmpeg);
+            apply_no_window(&mut probe_cmd);
+            let info = probe_cmd.arg("-i").arg(&out).output().expect("probe m4a");
             String::from_utf8_lossy(&info.stderr).into_owned()
         } else {
             String::new()
@@ -2387,5 +2956,354 @@ mod tests {
             "existing target must be restored if replacement fails"
         );
         let _ = fs::remove_file(&target);
+    }
+
+    #[test]
+    fn codec_preference_prefers_h264_and_aac_at_equal_resolution() {
+        assert!(video_codec_rank("avc1.64002a") > video_codec_rank("hev1.1.6.L120.90"));
+        assert!(video_codec_rank("hev1.1.6.L120.90") > video_codec_rank(""));
+        assert!(video_codec_rank("") > video_codec_rank("vp09.00.31.08"));
+        assert!(video_codec_rank("vp09.00.31.08") > video_codec_rank("av01.0.05M.08"));
+        assert!(audio_codec_rank("mp4a.40.2") > audio_codec_rank(""));
+        assert!(audio_codec_rank("") > audio_codec_rank("ac-3"));
+        assert!(audio_codec_rank("ac-3") > audio_codec_rank("opus"));
+
+        let xml = r#"<MPD><Period>
+          <AdaptationSet mimeType="video/mp4">
+            <Representation codecs="av01.0.08M.08" bandwidth="3800000" width="1080" height="1920"><BaseURL>https://cdn.instagram.com/v/av1.mp4</BaseURL></Representation>
+            <Representation codecs="vp09.00.40.08" bandwidth="3400000" width="1080" height="1920"><BaseURL>https://cdn.instagram.com/v/vp9.mp4</BaseURL></Representation>
+            <Representation codecs="avc1.64002a" bandwidth="2200000" width="1080" height="1920"><BaseURL>https://cdn.instagram.com/v/h264.mp4</BaseURL></Representation>
+          </AdaptationSet>
+          <AdaptationSet mimeType="audio/mp4">
+            <Representation codecs="opus" bandwidth="192000"><BaseURL>https://cdn.instagram.com/v/audio.opus</BaseURL></Representation>
+            <Representation codecs="mp4a.40.2" bandwidth="128000"><BaseURL>https://cdn.instagram.com/v/audio.m4a</BaseURL></Representation>
+          </AdaptationSet>
+        </Period></MPD>"#;
+        let (videos, audios) = parse_dash_manifest(xml);
+        assert_eq!(videos[0].url, "https://cdn.instagram.com/v/h264.mp4");
+        assert_eq!(audios[0].url, "https://cdn.instagram.com/v/audio.m4a");
+
+        let json = serde_json::json!({
+            "items": [{
+                "code": "C9xCodecSort",
+                "pk": "11223344",
+                "user": { "username": "codec_user" },
+                "video_versions": [
+                    { "url": "https://cdn.instagram.com/v/prog_av1.mp4", "width": 1080, "height": 1920, "codecs": "av01.0.08M.08", "bandwidth": 3500000 },
+                    { "url": "https://cdn.instagram.com/v/prog_avc.mp4", "width": 1080, "height": 1920, "codecs": "avc1.64002a", "bandwidth": 2000000 }
+                ],
+                "video_dash_manifest": xml
+            }]
+        })
+        .to_string();
+        let post = extract_post_from_json_text(&json, Some("C9xCodecSort"), true).expect("parsed");
+        assert_eq!(
+            post.items[0].formats[0].video_url,
+            "https://cdn.instagram.com/v/h264.mp4"
+        );
+        assert_eq!(post.items[0].formats[0].codecs, "avc1.64002a");
+    }
+
+    #[test]
+    fn video_header_and_mp4_layout_helpers_detect_webm_fragmented_and_faststart() {
+        assert!(is_valid_webm_header(&[0x1a, 0x45, 0xdf, 0xa3, 0x9f]));
+        assert!(!is_valid_download_video_header(
+            &[0x1a, 0x45, 0xdf, 0xa3, 0x9f],
+            false
+        ));
+        assert!(is_valid_download_video_header(
+            &[0x1a, 0x45, 0xdf, 0xa3, 0x9f],
+            true
+        ));
+
+        let fast = unique_temp_media_path("layout-fast", "mp4");
+        let mut fast_bytes = Vec::new();
+        fast_bytes.extend_from_slice(&20u32.to_be_bytes());
+        fast_bytes.extend_from_slice(b"ftypisom\x00\x00\x02\x00isom");
+        fast_bytes.extend_from_slice(&8u32.to_be_bytes());
+        fast_bytes.extend_from_slice(b"moov");
+        fast_bytes.extend_from_slice(&8u32.to_be_bytes());
+        fast_bytes.extend_from_slice(b"mdat");
+        fs::write(&fast, &fast_bytes).unwrap();
+        let layout_fast = inspect_mp4_layout(&fast);
+        let _ = fs::remove_file(&fast);
+        assert!(layout_fast.is_mp4);
+        assert!(layout_fast.is_faststart);
+        assert!(!layout_fast.is_fragmented);
+
+        let frag = unique_temp_media_path("layout-frag", "mp4");
+        let mut frag_bytes = Vec::new();
+        frag_bytes.extend_from_slice(&20u32.to_be_bytes());
+        frag_bytes.extend_from_slice(b"ftypisom\x00\x00\x02\x00isom");
+        frag_bytes.extend_from_slice(&8u32.to_be_bytes());
+        frag_bytes.extend_from_slice(b"moov");
+        frag_bytes.extend_from_slice(&8u32.to_be_bytes());
+        frag_bytes.extend_from_slice(b"moof");
+        fs::write(&frag, &frag_bytes).unwrap();
+        let layout_frag = inspect_mp4_layout(&frag);
+        let _ = fs::remove_file(&frag);
+        assert!(layout_frag.is_fragmented);
+        assert!(!layout_frag.is_faststart);
+    }
+
+    #[test]
+    fn normalize_video_mp4_preserves_native_h264_aac_and_normalizes_late_moov_and_webm() {
+        let Some(ffmpeg) = find_ffmpeg_binary() else {
+            return;
+        };
+        let native = unique_temp_media_path("t-native", "mp4");
+        let native_out = unique_temp_media_path("t-native-out", "mp4");
+        let late = unique_temp_media_path("t-late", "mp4");
+        let late_out = unique_temp_media_path("t-late-out", "mp4");
+        let webm = unique_temp_media_path("t-webm", "webm");
+        let webm_out = unique_temp_media_path("t-webm-out", "mp4");
+
+        let mut c1 = Command::new(&ffmpeg);
+        apply_no_window(&mut c1);
+        let s1 = c1
+            .args([
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=blue:s=64x64:d=0.3",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=0.3",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-movflags",
+                "+faststart",
+            ])
+            .arg(&native)
+            .status()
+            .expect("native mp4");
+        assert!(s1.success());
+
+        let warn_native =
+            normalize_video_mp4(&ffmpeg, &native, None, &native_out).expect("native passthrough");
+        assert!(warn_native.is_none());
+        assert_eq!(
+            fs::read(&native).unwrap(),
+            fs::read(&native_out).unwrap(),
+            "native H.264 yuv420p + AAC + faststart must be preserved byte-for-byte"
+        );
+
+        let mut c2 = Command::new(&ffmpeg);
+        apply_no_window(&mut c2);
+        let s2 = c2
+            .args([
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=red:s=64x64:d=0.3",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=520:duration=0.3",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+            ])
+            .arg(&late)
+            .status()
+            .expect("late moov mp4");
+        assert!(s2.success());
+        assert!(!inspect_mp4_layout(&late).is_faststart);
+        normalize_video_mp4(&ffmpeg, &late, None, &late_out).expect("remux faststart");
+        let late_streams = probe_media_streams(&ffmpeg, &late_out);
+        assert!(late_streams.layout.is_faststart);
+        assert_eq!(late_streams.video_codec, "h264");
+        assert_eq!(late_streams.audio_state, Mp4AudioState::Aac);
+
+        let mut c3 = Command::new(&ffmpeg);
+        apply_no_window(&mut c3);
+        let s3 = c3
+            .args([
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=green:s=64x64:d=0.3",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=660:duration=0.3",
+                "-c:v",
+                "libvpx-vp9",
+                "-c:a",
+                "libopus",
+            ])
+            .arg(&webm)
+            .status();
+        if matches!(s3, Ok(st) if st.success()) {
+            normalize_video_mp4(&ffmpeg, &webm, None, &webm_out).expect("normalize webm");
+            let webm_streams = probe_media_streams(&ffmpeg, &webm_out);
+            assert!(webm_streams.layout.is_faststart);
+            assert!(!webm_streams.layout.is_fragmented);
+            assert_eq!(webm_streams.video_codec, "h264");
+            assert_eq!(webm_streams.pix_fmt, "yuv420p");
+            assert_eq!(webm_streams.audio_state, Mp4AudioState::Aac);
+        }
+
+        for p in [native, native_out, late, late_out, webm, webm_out] {
+            let _ = fs::remove_file(p);
+        }
+    }
+
+    #[test]
+    fn image_detection_and_normalization_handles_jpeg_png_webp_and_rejects_ftypisom() {
+        assert_eq!(
+            detect_image_format(b"\xFF\xD8\xFF\xE0\x00\x10JFIF").map(|f| f.kind),
+            Some(ImageFormatKind::Jpg)
+        );
+        assert_eq!(
+            detect_image_format(b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0d").map(|f| f.kind),
+            Some(ImageFormatKind::Png)
+        );
+        assert_eq!(
+            detect_image_format(b"GIF89a\x01\x00\x01\x00").map(|f| f.kind),
+            Some(ImageFormatKind::Gif)
+        );
+        let lossy_webp = detect_image_format(b"RIFF\x24\x00\x00\x00WEBPVP8 ").unwrap();
+        assert_eq!(lossy_webp.kind, ImageFormatKind::Webp);
+        assert!(!lossy_webp.is_lossless_or_alpha);
+        let lossless_webp = detect_image_format(b"RIFF\x24\x00\x00\x00WEBPVP8L").unwrap();
+        assert!(lossless_webp.is_lossless_or_alpha);
+        assert_eq!(
+            detect_image_format(b"\x00\x00\x00\x18ftypavif\x00\x00\x00\x00mif1").map(|f| f.kind),
+            Some(ImageFormatKind::Avif)
+        );
+        assert!(
+            detect_image_format(b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isom").is_none(),
+            "non-image MP4 ftypisom must be rejected"
+        );
+        assert_eq!(
+            replace_path_extension(Path::new("dir/user.1-hash.jpg"), "png"),
+            PathBuf::from("dir/user.1-hash.png")
+        );
+
+        let Some(ffmpeg) = find_ffmpeg_binary() else {
+            return;
+        };
+        let src_png = unique_temp_media_path("t-img", "png");
+        let src_webp = unique_temp_media_path("t-img", "webp");
+        let src_alpha_webp = unique_temp_media_path("t-img-a", "webp");
+        let target_jpg = unique_temp_media_path("t-img-target", "jpg");
+
+        let mut cp = Command::new(&ffmpeg);
+        apply_no_window(&mut cp);
+        assert!(cp
+            .args([
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=orange:s=32x32:d=0.1",
+                "-frames:v",
+                "1"
+            ])
+            .arg(&src_png)
+            .status()
+            .unwrap()
+            .success());
+
+        let final_png = normalize_image_file(Some(&ffmpeg), &src_png, &target_jpg).unwrap();
+        assert_eq!(final_png.extension().and_then(|e| e.to_str()), Some("png"));
+        assert_eq!(fs::read(&src_png).unwrap(), fs::read(&final_png).unwrap());
+
+        let mut cw = Command::new(&ffmpeg);
+        apply_no_window(&mut cw);
+        if matches!(
+            cw.args(["-y", "-f", "lavfi", "-i", "color=c=blue:s=32x32:d=0.1", "-frames:v", "1"])
+                .arg(&src_webp)
+                .status(),
+            Ok(st) if st.success()
+        ) {
+            let out_jpg = normalize_image_file(Some(&ffmpeg), &src_webp, &target_jpg).unwrap();
+            assert_eq!(out_jpg.extension().and_then(|e| e.to_str()), Some("jpg"));
+            assert_eq!(&fs::read(&out_jpg).unwrap()[0..3], &[0xff, 0xd8, 0xff]);
+            let _ = fs::remove_file(out_jpg);
+        }
+
+        let mut cwa = Command::new(&ffmpeg);
+        apply_no_window(&mut cwa);
+        if matches!(
+            cwa.args([
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=blue@0.5:s=32x32:d=0.1,format=rgba",
+                "-frames:v",
+                "1",
+                "-lossless",
+                "1",
+            ])
+            .arg(&src_alpha_webp)
+            .status(),
+            Ok(st) if st.success()
+        ) {
+            let out_png =
+                normalize_image_file(Some(&ffmpeg), &src_alpha_webp, &target_jpg).unwrap();
+            assert_eq!(out_png.extension().and_then(|e| e.to_str()), Some("png"));
+            assert_eq!(&fs::read(&out_png).unwrap()[0..8], b"\x89PNG\r\n\x1a\n");
+            let _ = fs::remove_file(out_png);
+        }
+
+        for p in [src_png, src_webp, src_alpha_webp, final_png, target_jpg] {
+            let _ = fs::remove_file(p);
+        }
+    }
+
+    #[test]
+    fn normalize_video_mp4_with_streams_reuses_preprobed_metadata() {
+        let Some(ffmpeg) = find_ffmpeg_binary() else {
+            return;
+        };
+        let vid = unique_temp_media_path("t-preprobe", "mp4");
+        let out = unique_temp_media_path("t-preprobe-out", "mp4");
+        let mut c = Command::new(&ffmpeg);
+        apply_no_window(&mut c);
+        assert!(c
+            .args([
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=black:s=64x64:d=0.3",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=0.3",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-movflags",
+                "+faststart",
+            ])
+            .arg(&vid)
+            .status()
+            .unwrap()
+            .success());
+        let preprobed = probe_media_streams(&ffmpeg, &vid);
+        let warn = normalize_video_mp4_with_streams(&ffmpeg, &vid, None, &out, Some(&preprobed))
+            .expect("preprobed normalize");
+        assert!(warn.is_none());
+        assert_eq!(fs::read(&vid).unwrap(), fs::read(&out).unwrap());
+        let _ = fs::remove_file(vid);
+        let _ = fs::remove_file(out);
     }
 }

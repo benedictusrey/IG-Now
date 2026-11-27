@@ -9,9 +9,9 @@ This guide provides everything you need to know about setting up your developmen
 ## 🌟 Philosophy & Community Spirit
 
 **IG-Now** was created to bring a focused, lightweight, and delightfully integrated Instagram client to desktop operating systems. We believe in:
-- **Lightweight Architecture:** Minimal runtime dependencies, no Chromium/Electron bloat, low memory footprint.
+- **Lightweight Architecture:** Tauri v2 + Rust on Windows and macOS (`WebView2` / `WKWebView`), and a lean, isolated Electron-for-Linux host (`electron-linux/`) on Linux reusing `frontend/` directly with low memory footprint.
 - **Deep OS Integration:** Native trays, intelligent playback pausing on minimize, global shortcuts, and seamless window management.
-- **User Privacy:** Zero telemetry, no remote databases, and all credentials kept safely in local OS webview storage.
+- **User Privacy:** Zero telemetry, no remote databases, and all credentials kept safely in local OS webview / Electron session storage.
 - **Friendly Collaboration:** Constructive reviews, approachable pathways for newcomers, and high standards of craft.
 
 ---
@@ -20,7 +20,7 @@ This guide provides everything you need to know about setting up your developmen
 
 ### All Platforms
 - [Rust](https://rustup.rs/) (stable toolchain)
-- [Node.js](https://nodejs.org/) 20+ (used for JS syntax validation, tool scripts, and Tauri CLI helpers)
+- [Node.js](https://nodejs.org/) 22+ (used for JS unit tests, syntax validation, Tauri CLI helpers, and `electron-linux/`)
 
 ### Windows 10 / 11
 - [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (preinstalled on Windows 11)
@@ -32,13 +32,20 @@ This guide provides everything you need to know about setting up your developmen
 - macOS 10.15 Catalina or newer
 
 ### Linux (x64)
+- **Electron-for-Linux (`electron-linux/`)** runtime & packaging dependencies:
+```bash
+sudo apt update && sudo apt install -y \
+  libfuse2 \
+  xz-utils \
+  rpm
+```
+- Only needed if running Linux Rust/Tauri checks (`cargo check` / `cargo test --lib` in `src-tauri/`):
 ```bash
 sudo apt update && sudo apt install -y \
   libwebkit2gtk-4.1-dev \
   libayatana-appindicator3-dev \
   librsvg2-dev \
-  patchelf \
-  rpm
+  patchelf
 ```
 *(On GNOME desktop environments, tray support requires an AppIndicator shell extension).*
 
@@ -48,12 +55,20 @@ sudo apt update && sudo apt install -y \
 
 ```
 IG-Now/
-├── frontend/                     # Assets embedded by Tauri (logo, downloader UI) + injected scripts
+├── frontend/                     # Assets shared by Tauri & electron-linux + injected scripts & tests
 │   ├── downloader.html           # Standalone native IG-Now Downloader window shell
 │   ├── downloader.js             # Downloader inspection, carousel/caption state & IPC calls
 │   ├── direct-messages.js        # DM link extraction, unread reporting & scroll fixes
-│   └── instagram-tools.js        # Injected Instagram helpers (video bar, sidebar nav, image triggers)
-├── src-tauri/                    # The Rust application core
+│   ├── instagram-tools.js        # Injected Instagram helpers (video bar, sidebar nav, Notes clip modal)
+│   └── *.test.*                  # Frontend unit tests (links, direct-messages, instagram-tools, downloader)
+├── electron-linux/               # Electron-for-Linux desktop host & packaging (.AppImage, .deb, .rpm)
+│   ├── main.js                   # Window lifecycle, tray, IPC origin gates, WSLg/Wayland flags
+│   ├── backend.js                # Media normalization, FFmpeg/curl helpers, autostart & URL validation
+│   ├── preload-instagram.js      # Sandboxed contextBridge shim & script injector for instagram.com
+│   ├── preload-downloader.js     # Sandboxed contextBridge shim for local downloader.html
+│   ├── package.json              # Electron & electron-builder config (desktopName, targets)
+│   └── test.cjs                  # Electron-for-Linux backend & packaging unit tests
+├── src-tauri/                    # The Rust application core (Windows & macOS builds + shared tests)
 │   ├── src/main.rs               # App entry point
 │   ├── src/lib.rs                # Window geometry/lifecycle, playback watchdog, Tauri commands
 │   ├── src/downloader.rs         # Native post inspection, DASH/FFmpeg muxing & validation
@@ -85,7 +100,7 @@ IG-Now/
 Follow these steps locally to verify your changes before submitting:
 
 ```bash
-# 1. Install JS dependencies, run unit tests & check syntax
+# 1. Install JS dependencies, run frontend unit tests & check syntax
 npm ci
 npm test
 node --check frontend/instagram-tools.js
@@ -94,11 +109,24 @@ node --check frontend/downloader.js
 
 # 2. Check Rust formatting, compilation & unit tests
 cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
-cargo check --manifest-path src-tauri/Cargo.toml
+cargo check --manifest-path src-tauri/Cargo.toml --locked
 cargo test --manifest-path src-tauri/Cargo.toml --locked --lib
 
-# 3. Build local installer / release bundle
+# 3. Verify Electron-for-Linux (on Linux / WSL)
+cd electron-linux
+npm ci
+npm test
+node --check backend.js
+node --check main.js
+node --check preload-instagram.js
+node --check preload-downloader.js
+node --check test.cjs
+
+# 4. Build local installer / release bundle
+# Windows & macOS (from repo root):
 npx tauri build
+# Linux (from electron-linux/):
+npm run dist
 ```
 
 ---
@@ -107,10 +135,11 @@ npx tauri build
 
 Before opening a Pull Request, please ensure the following verification checks pass:
 
-1. `node --check frontend/instagram-tools.js` runs with zero syntax errors.
-2. `cargo fmt --all -- --check` adheres to standard Rust formatting.
-3. `cargo check` and `cargo test --lib` complete with zero errors.
-4. **Manual Functional Smoke Test:**
+1. Root `npm test` and `node --check` pass on `frontend/instagram-tools.js`, `frontend/direct-messages.js`, and `frontend/downloader.js`.
+2. `cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check` adheres to standard Rust formatting.
+3. `cargo check --manifest-path src-tauri/Cargo.toml --locked` and `cargo test --manifest-path src-tauri/Cargo.toml --locked --lib` complete with zero errors.
+4. `cd electron-linux && npm test` and `node --check` pass across `backend.js`, `main.js`, `preload-instagram.js`, `preload-downloader.js`, and `test.cjs`.
+5. **Manual Functional Smoke Test:**
    - App launches cleanly into Instagram with no visual flash.
    - White seek bar responds accurately to click and drag across Reels, feed posts, and Search cards.
    - `-5s` / `+5s` seek skip and `⏮` / `⏭` Reel navigation buttons trigger expected actions.

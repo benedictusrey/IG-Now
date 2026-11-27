@@ -99,3 +99,25 @@ test('DM MutationObserver stays disconnected outside /direct/ once inboxCount is
     assert(win.document.documentElement.classList.contains('ignow-direct-page'));
   } finally { win.dispatchEvent(new win.Event('pagehide')); dom.window.close(); }
 });
+test('DM MutationObserver ignores Note clip modal/button and characterData on /direct/inbox/', async () => {
+  const f = fixture('/direct/inbox/');
+  try {
+    await wait();
+    const before = f.timers();
+    const noteModal = f.win.document.createElement('div');
+    noteModal.className = 'ignow-note-clip-modal';
+    const noteText = f.win.document.createTextNode('0:10');
+    noteModal.appendChild(noteText);
+    f.win.document.body.appendChild(noteModal);
+    noteText.data = '0:11';
+    const noteBtn = f.win.document.createElement('button');
+    noteBtn.className = 'ignow-note-clip-btn';
+    noteBtn.textContent = 'Select clip';
+    f.win.document.body.appendChild(noteBtn);
+    const inboxTyping = f.win.document.createTextNode('typing note');
+    f.win.document.body.appendChild(inboxTyping);
+    inboxTyping.data = 'typing note!';
+    await wait();
+    assert.equal(f.timers(), before, 'Note modal, clip button, and inbox characterData must not schedule DM render');
+  } finally { f.win.dispatchEvent(new f.win.Event('pagehide')); f.dom.window.close(); }
+});

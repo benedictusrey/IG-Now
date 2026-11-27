@@ -98,12 +98,14 @@
       const thread = threadId();
       if (!thread || !cache.size) return;
       const candidates = Array.from(document.querySelectorAll('[role="row"] [dir="auto"], main [dir="auto"]'))
-        .filter(node => !node.closest(".ignow-dmlinks"));
+        .filter(node => !node.closest(".ignow-dmlinks"))
+        .map(node => ({ node, text: normalize(node.textContent) }));
       for (const link of cache.values()) {
         if (link.thread !== thread) continue;
-        const matches = candidates.filter(node => normalize(node.textContent) === normalize(link.text));
+        const targetText = normalize(link.text);
+        const matches = candidates.filter(c => c.text === targetText);
         if (matches.length !== 1) continue;
-        const row = matches[0].closest('[role="row"]') || matches[0].parentElement;
+        const row = matches[0].node.closest('[role="row"]') || matches[0].node.parentElement;
         if (Array.from(row.querySelectorAll(".ignow-dmlink")).some(button => button.dataset.url === link.url)) continue;
         let box = row.querySelector(".ignow-dmlinks");
         if (!box) { box = document.createElement("div"); box.className = "ignow-dmlinks"; row.appendChild(box); }
@@ -119,7 +121,9 @@
       }
     } finally {
       if (isDirect()) {
-        observer?.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+        observer?.observe(document.documentElement, threadId()
+          ? { childList: true, subtree: true, characterData: true }
+          : { childList: true, subtree: true });
       } else if (inboxCount === null) {
         observer?.observe(document.documentElement, { childList: true, subtree: true });
       }
@@ -183,18 +187,34 @@
     style.textContent = `
       html.ignow-direct-page, html.ignow-direct-page > body { overflow: hidden !important; }
       .ignow-dmlinks { display: flex; flex-direction: column; gap: 6px; max-width: 300px; margin: 6px 12px; }
-      .ignow-dmlink { padding: 10px 16px; border: 1px solid #80808066; border-radius: 20px; background: #80808022; color: inherit; font: 600 14px "Segoe UI", sans-serif; cursor: pointer; }
+      .ignow-dmlink { padding: 10px 16px; border: 1px solid #80808066; border-radius: 20px; background: #80808022; color: inherit; font: 600 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; cursor: pointer; }
       .ignow-dmlink:hover { background: #80808044; }
       .ignow-dmlink:focus-visible { outline: 2px solid #0095f6; outline-offset: 2px; }
     `;
     document.documentElement.appendChild(style);
+    const isIgnoredDmNode = node => node?.nodeType === 1 && Boolean(
+      node.closest?.(".ignow-video-controls, .ignow-dmlinks, .ignow-note-clip-modal, .ignow-note-clip-btn")
+    );
+    const hasInboxAnchor = node => node?.nodeType === 1 && !isIgnoredDmNode(node) &&
+      (node.matches('a[href*="/direct/inbox"]') || node.querySelector('a[href*="/direct/inbox"]'));
     observer = new root.MutationObserver(records => {
       const direct = isDirect();
-      if (records.some(record => !record.target.parentElement?.closest(".ignow-video-controls, .ignow-dmlinks") &&
-        (direct || (inboxCount === null && (record.target.closest?.('a[href*="/direct/inbox"]') ||
+      const activeThread = direct ? threadId() : "";
+      if (records.some(record => {
+        const targetEl = record.target.nodeType === 1 ? record.target : record.target.parentElement;
+        if (targetEl?.closest(".ignow-video-controls, .ignow-dmlinks, .ignow-note-clip-modal, .ignow-note-clip-btn")) {
+          return false;
+        }
+        if (record.type === "characterData") {
+          return Boolean(direct && activeThread);
+        }
+        if (direct && activeThread) {
+          return record.addedNodes.length === 0 || Array.from(record.addedNodes).some(node => !isIgnoredDmNode(node));
+        }
+        return inboxCount === null && (record.target.closest?.('a[href*="/direct/inbox"]') ||
           (record.type === "childList" && record.addedNodes.length > 0 &&
-            Array.from(record.addedNodes).some(node => node.nodeType === 1 &&
-              (node.matches('a[href*="/direct/inbox"]') || node.querySelector('a[href*="/direct/inbox"]'))))))))) schedule();
+            Array.from(record.addedNodes).some(hasInboxAnchor)));
+      })) schedule();
     });
     root.addEventListener("popstate", schedule);
     for (const method of ["pushState", "replaceState"]) {

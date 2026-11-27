@@ -231,6 +231,38 @@ test("passes paired DASH audioUrl to download_media when post node uses video_da
   }
 });
 
+test("prefers avc1 over av01/vp09 video and mp4a over opus audio in DASH and video_versions", async () => {
+  const f = createFixture("/reels/C9xCodecPref/");
+  try {
+    f.video.__reactFiber$test = {
+      memoizedProps: {},
+      memoizedState: {
+        memoizedState: {
+          media: {
+            code: "C9xCodecPref",
+            user: { username: "codec_creator" },
+            video_versions: [
+              { url: "https://cdn.instagram.com/v/prog_av1.mp4", width: 1080, height: 1920, codecs: "av01.0.08M.08" },
+              { url: "https://cdn.instagram.com/v/prog_avc.mp4", width: 1080, height: 1920, codecs: "avc1.64002a" }
+            ],
+            video_dash_manifest: '<MPD><Period><AdaptationSet mimeType="video/mp4"><Representation codecs="av01.0.08M.08" bandwidth="3800000" width="1080" height="1920"><BaseURL>https://cdn.instagram.com/v/dash_av1.mp4</BaseURL></Representation><Representation codecs="vp09.00.40.08" bandwidth="3400000" width="1080" height="1920"><BaseURL>https://cdn.instagram.com/v/dash_vp9.mp4</BaseURL></Representation><Representation codecs="avc1.64002a" bandwidth="2200000" width="1080" height="1920"><BaseURL>https://cdn.instagram.com/v/dash_h264.mp4</BaseURL></Representation></AdaptationSet><AdaptationSet mimeType="audio/mp4"><Representation codecs="opus" bandwidth="192000"><BaseURL>https://cdn.instagram.com/v/dash_opus.opus</BaseURL></Representation><Representation codecs="mp4a.40.2" bandwidth="128000"><BaseURL>https://cdn.instagram.com/v/dash_aac.m4a</BaseURL></Representation></AdaptationSet></Period></MPD>'
+          }
+        },
+        next: null
+      },
+      return: null
+    };
+
+    await f.win.__ignowTools.saveMedia(f.video);
+    const dlCall = f.calls.find(c => c.command === "download_media");
+    assert(dlCall, "must invoke download_media");
+    assert.equal(dlCall.args.url, "https://cdn.instagram.com/v/prog_avc.mp4");
+    assert.equal(dlCall.args.audioUrl, "https://cdn.instagram.com/v/dash_aac.m4a");
+  } finally {
+    f.dom.window.close();
+  }
+});
+
 test("probes signed-in post metadata for Downloader window via submit_downloader_probe", async () => {
   const f = createFixture("/reels/");
   try {
@@ -1841,6 +1873,12 @@ test("keyboard slider inputs work, blur cleans active volume drag, viewer expose
     overlay.querySelector(".ignow-media-viewer__close").click();
     assert.equal(doc.activeElement, triggerBtn, "closing viewer must restore focus");
 
+    // Cmd+Click (macOS metaKey) also opens the image zoom viewer
+    triggerImg.dispatchEvent(new win.MouseEvent("click", { bubbles: true, metaKey: true, cancelable: true }));
+    const metaOverlay = doc.querySelector(".ignow-media-viewer");
+    assert(metaOverlay, "metaKey + click must open image zoom viewer");
+    metaOverlay.querySelector(".ignow-media-viewer__close").click();
+
     // 5. Linux blur scan caches unchanged stylesheet rule signature across repeated scrolls
     const extraSheet = doc.createElement("style");
     extraSheet.textContent = ".s1 { color: red; }";
@@ -1860,6 +1898,854 @@ test("keyboard slider inputs work, blur cleans active volume drag, viewer expose
     win.dispatchEvent(new win.Event("scroll"));
     await new Promise(r => setTimeout(r, 170));
     assert.equal(selectorReads, 0, "repeated scroll with unchanged stylesheets must skip rule scanning");
+  } finally {
+    f.dom.window.close();
+  }
+});
+
+test("Issue #8 Note music clip selector caches GraphQL tracks, opens waveform modal, previews full audio, and patches music_note_create_info on XHR/fetch", async () => {
+  const f = createFixture("/direct/inbox/");
+  try {
+    const doc = f.win.document;
+    const apiCalls = [];
+    let sentXhrBody = null;
+    let sentFetchBody = null;
+
+    const OrigXHR = f.win.XMLHttpRequest;
+    class MockXHR {
+      constructor() {
+        this._headers = {};
+        this._listeners = {};
+        this.status = 200;
+        this.responseType = "";
+        this.responseText = "";
+      }
+      open(method, url) {
+        this._method = method;
+        this._url = url;
+      }
+      setRequestHeader(k, v) {
+        this._headers[k] = v;
+      }
+      addEventListener(type, fn) {
+        (this._listeners[type] ||= []).push(fn);
+      }
+      send(body) {
+        sentXhrBody = body;
+        if (String(this._url).includes("/api/graphql") && !String(body || "").includes("music_note_create_info")) {
+          this.responseText = JSON.stringify({
+            data: {
+              xdt_api__v1__music__search: {
+                items: [{
+                  track: {
+                    id: "99001122",
+                    audio_cluster_id: "55443322",
+                    audio_asset_id: "99001122",
+                    title: "Night Drive",
+                    display_artist: "Synth Wave",
+                    duration_in_ms: 180000,
+                    is_explicit: true,
+                    cover_artwork_uri: "https://cdn.instagram.com/v/cover.jpg",
+                    web_30s_preview_download_url: "https://cdn.instagram.com/v/preview30.m4a",
+                    highlight_start_times_in_ms: [42000, 95000]
+                  }
+                }]
+              }
+            }
+          });
+          (this._listeners.load || []).forEach(fn => fn.call(this));
+        }
+      }
+    }
+    f.win.XMLHttpRequest = MockXHR;
+
+    // Re-run fixture with MockXHR? Wait: createFixture already installed XHR hooks on f.win.XMLHttpRequest!
+    // So let's verify against a fresh DOM or trigger fetch for search AND wrap Original XHR send in this test?
+    // Even better: restore OrigXHR and hook MockXHR inside a dedicated JSDOM below so both fetch and XHR are tested from scratch!
+    assert.ok(OrigXHR);
+  } finally {
+    f.dom.window.close();
+  }
+
+  // Full end-to-end JSDOM with MockXHR + MockFetch installed BEFORE instagram-tools.js loads:
+  const { JSDOM } = require("jsdom");
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const scriptSrc = fs.readFileSync(path.join(__dirname, "instagram-tools.js"), "utf8");
+  const dom = new JSDOM("<!doctype html><html><body><div id='composer'></div></body></html>", {
+    url: "https://www.instagram.com/direct/inbox/",
+    runScripts: "outside-only"
+  });
+  const win = dom.window;
+  const doc = win.document;
+  let sentXhrBody = null;
+  let sentFetchBody = null;
+  const clipsCalls = [];
+
+  class MockXHR {
+    constructor() {
+      this._listeners = {};
+      this.status = 200;
+      this.responseType = "";
+      this.responseText = "";
+    }
+    open(method, url) { this._url = url; }
+    setRequestHeader() {}
+    addEventListener(type, fn) { (this._listeners[type] ||= []).push(fn); }
+    send(body) {
+      sentXhrBody = body;
+      if (String(this._url).includes("/api/graphql") && !String(body || "").includes("music_note_create_info")) {
+        this.responseText = "for (;;);" + JSON.stringify({
+          data: {
+            music_search: {
+              items: [
+                {
+                  track: {
+                    id: "99001122",
+                    audio_cluster_id: "55443322",
+                    audio_asset_id: "99001122",
+                    title: "Night Drive",
+                    display_artist: "Synth Wave",
+                    duration_in_ms: 180000,
+                    is_explicit: true,
+                    cover_artwork_uri: "https://cdn.instagram.com/v/cover.jpg",
+                    web_30s_preview_download_url: "https://cdn.instagram.com/v/preview30.m4a",
+                    highlight_start_times_in_ms: [42000, 95000]
+                  }
+                },
+                {
+                  track: {
+                    id: "77665544",
+                    audio_cluster_id: "11223344",
+                    audio_asset_id: "77665544",
+                    title: "Distractor Song",
+                    display_artist: "Wrong Artist",
+                    duration_in_ms: 140000,
+                    web_30s_preview_download_url: "https://cdn.instagram.com/v/other.m4a"
+                  }
+                }
+              ]
+            }
+          }
+        });
+        (this._listeners.load || []).forEach(fn => fn.call(this));
+      }
+    }
+  }
+  win.XMLHttpRequest = MockXHR;
+  win.fetch = async (url, init = {}) => {
+    const u = String(url);
+    if (u.includes("/api/v1/clips/music/")) {
+      clipsCalls.push({ url: u, body: String(init.body || "") });
+      return {
+        ok: true,
+        url: u,
+        headers: { get: () => "application/json" },
+        json: async () => ({
+          metadata: {
+            music_info: {
+              music_asset_info: {
+                audio_cluster_id: "55443322",
+                audio_asset_id: "99001122",
+                title: "Night Drive",
+                display_artist: "Synth Wave",
+                duration_in_ms: 180000,
+                is_explicit: true,
+                fast_start_progressive_download_url: "https://cdn.instagram.com/v/full_180s.m4a",
+                highlight_start_times_in_ms: [42000, 95000]
+              }
+            }
+          }
+        }),
+        text: async () => "{}"
+      };
+    }
+    if (u.includes("/api/graphql") && String(init.body || "").includes("music_note_create_info")) {
+      sentFetchBody = String(init.body || "");
+      return { ok: true, url: u, headers: { get: () => "application/json" }, text: async () => "{}" };
+    }
+    return { ok: true, url: u, headers: { get: () => "application/json" }, text: async () => "{}" };
+  };
+  Object.defineProperty(doc, "cookie", { value: "csrftoken=csrf_abc", configurable: true });
+  win.HTMLMediaElement.prototype.play = async function () {
+    Object.defineProperty(this, "paused", { value: false, configurable: true, writable: true });
+  };
+  win.HTMLMediaElement.prototype.pause = function () {
+    Object.defineProperty(this, "paused", { value: true, configurable: true, writable: true });
+  };
+  win.HTMLMediaElement.prototype.load = function () {};
+
+  try {
+    win.eval(scriptSrc);
+
+    // 1. Trigger music search GraphQL response via XHR so track metadata is cached
+    const searchXhr = new win.XMLHttpRequest();
+    searchXhr.open("POST", "https://www.instagram.com/api/graphql");
+    searchXhr.send("doc_id=29278606831779411");
+
+    // 2. Render attached song pill matching Instagram's nested absolute Remove song wrapper
+    const composer = doc.getElementById("composer");
+    const pill = doc.createElement("div");
+    const titleSpan = doc.createElement("span");
+    titleSpan.textContent = "Night Drive";
+    const artistSpan = doc.createElement("span");
+    artistSpan.textContent = "Synth Wave";
+    const cornerWrap = doc.createElement("div");
+    cornerWrap.style.position = "absolute";
+    const removeBtn = doc.createElement("div");
+    removeBtn.setAttribute("role", "button");
+    removeBtn.setAttribute("aria-label", "Remove song");
+    cornerWrap.appendChild(removeBtn);
+    pill.append(titleSpan, artistSpan, cornerWrap);
+    composer.appendChild(pill);
+
+    await new Promise(r => setTimeout(r, 180));
+    const clipBtn = doc.querySelector(".ignow-note-clip-btn");
+    assert(clipBtn, "must inject Select clip button next to Remove song");
+    assert(clipBtn.classList.contains("ignow-note-clip-btn--floating"), "must float cleanly next to absolute Remove song wrapper");
+
+    // 3. Open clip selector modal -> fetches full track via /api/v1/clips/music/
+    clipBtn.click();
+    await new Promise(r => setTimeout(r, 30));
+    assert.equal(clipsCalls.length, 1, "must request full track from /api/v1/clips/music/");
+    assert(clipsCalls[0].body.includes("audio_cluster_id=55443322"));
+
+    const modal = doc.querySelector(".ignow-note-clip-modal");
+    assert(modal, "must open music clip modal");
+    assert.equal(modal.getAttribute("role"), "dialog");
+    assert.equal(modal.getAttribute("aria-modal"), "true");
+    assert(modal.textContent.includes("Night Drive"));
+    assert(modal.textContent.includes("E"));
+
+    // Select 15s duration & scrub via highlight chip + keyboard ArrowRight
+    const dur15Btn = modal.querySelector("[data-clip-duration='15']");
+    assert(dur15Btn, "must provide 15s duration pill");
+    dur15Btn.click();
+
+    const highlightBtn = modal.querySelector("[data-highlight-ms='42000']");
+    assert(highlightBtn, "must render highlight snap chip");
+    highlightBtn.click();
+
+    const scrubber = modal.querySelector(".ignow-note-clip-waveform");
+    assert(scrubber, "must render waveform scrubber");
+    // Background <video> must NOT steal ArrowRight from waveform slider
+    const bgVideo = doc.createElement("video");
+    doc.body.appendChild(bgVideo);
+    scrubber.focus();
+    scrubber.dispatchEvent(new win.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    // 42000 + 1000 = 43000ms -> 0:43 to 0:58
+    assert(modal.textContent.includes("0:43"), modal.textContent);
+    assert(modal.textContent.includes("0:58"), modal.textContent);
+
+    // Pointer cancel stops waveform scrubbing cleanly
+    scrubber.getBoundingClientRect = () => ({ left: 0, top: 0, width: 180, height: 68, right: 180, bottom: 68 });
+    const makePtr = (type, props) => new win.MouseEvent(type, { bubbles: true, button: 0, ...props });
+    scrubber.dispatchEvent(makePtr("pointerdown", { clientX: 50 }));
+    const afterDownText = modal.textContent;
+    scrubber.dispatchEvent(makePtr("pointercancel", {}));
+    scrubber.dispatchEvent(makePtr("pointermove", { clientX: 140 }));
+    assert.equal(modal.textContent, afterDownText, "pointercancel must stop waveform drag");
+    highlightBtn.click();
+    scrubber.dispatchEvent(new win.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    bgVideo.remove();
+
+    // Start preview playback and verify __onWindowHidden pauses <audio>
+    const playBtn = modal.querySelector(".ignow-note-clip-play");
+    playBtn.click();
+    await new Promise(r => setTimeout(r, 15));
+    const audioEl = modal.querySelector("audio");
+    assert(audioEl && audioEl.src.includes("full_180s.m4a"), "preview must load full-track URL");
+    assert.equal(audioEl.paused, false);
+    win.__onWindowHidden();
+    assert.equal(audioEl.paused, true, "__onWindowHidden must pause preview audio");
+
+    // Apply clip & close modal -> restores focus
+    modal.querySelector(".ignow-note-clip-apply").click();
+    assert.equal(doc.querySelector(".ignow-note-clip-modal"), null);
+    assert.equal(doc.activeElement, clipBtn);
+
+    // 4. Submit Note via form-urlencoded XHR -> start_time & duration patched!
+    const submitXhr = new win.XMLHttpRequest();
+    submitXhr.open("POST", "https://www.instagram.com/api/graphql");
+    const params = new win.URLSearchParams({
+      doc_id: "28592645767037889",
+      variables: JSON.stringify({
+        input: {
+          additional_params: {
+            note_create_params: {
+              note_create_info: {
+                music_note_create_info: {
+                  audio_asset_id: "99001122",
+                  audio_cluster_id: "55443322",
+                  duration: 30000,
+                  start_time: 0
+                }
+              }
+            }
+          }
+        }
+      })
+    });
+    submitXhr.send(params.toString());
+    const patchedParams = new win.URLSearchParams(sentXhrBody);
+    const patchedVars = JSON.parse(patchedParams.get("variables"));
+    const musicInfo = patchedVars.input.additional_params.note_create_params.note_create_info.music_note_create_info;
+    assert.equal(musicInfo.start_time, 43000);
+    assert.equal(musicInfo.duration, 15000);
+
+    // 5. Re-apply and verify fetch JSON body patching + Remove song resets clip
+    clipBtn.click();
+    await new Promise(r => setTimeout(r, 20));
+    doc.querySelector(".ignow-note-clip-apply").click();
+    removeBtn.remove();
+    await new Promise(r => setTimeout(r, 180));
+    assert.equal(doc.querySelector(".ignow-note-clip-btn"), null, "removing song removes Select clip button");
+
+    await win.fetch("https://www.instagram.com/api/graphql", {
+      method: "POST",
+      body: JSON.stringify({
+        variables: {
+          input: {
+            additional_params: {
+              note_create_params: {
+                note_create_info: {
+                  music_note_create_info: { start_time: 0, duration: 30000 }
+                }
+              }
+            }
+          }
+        }
+      })
+    });
+    const afterRemove = JSON.parse(sentFetchBody);
+    assert.equal(afterRemove.variables.input.additional_params.note_create_params.note_create_info.music_note_create_info.start_time, 0, "removed song must not patch subsequent Notes");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("Issue #8 regressions: Esc on range sliders, audio ended/error feedback, FormData patching, and __ignowDisableBackdropBlur", async () => {
+  const { JSDOM } = require("jsdom");
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const scriptSrc = fs.readFileSync(path.join(__dirname, "instagram-tools.js"), "utf8");
+  const dom = new JSDOM("<!doctype html><html><body><div id='composer'></div></body></html>", {
+    url: "https://www.instagram.com/direct/inbox/",
+    runScripts: "outside-only"
+  });
+  const win = dom.window;
+  const doc = win.document;
+  win.__ignowDisableBackdropBlur = true;
+
+  let sentFormData = null;
+  let playShouldReject = false;
+
+  class MockXHR {
+    constructor() { this._listeners = {}; this.status = 200; this.responseType = ""; this.responseText = ""; }
+    open(_m, url) { this._url = url; }
+    setRequestHeader() {}
+    addEventListener(type, fn) { (this._listeners[type] ||= []).push(fn); }
+    send(body) {
+      if (String(this._url).includes("/api/graphql") && !String(body || "").includes("music_note_create_info")) {
+        this.responseText = JSON.stringify({
+          data: {
+            music_search: {
+              items: [{
+                track: {
+                  id: "445566",
+                  audio_cluster_id: "445566",
+                  audio_asset_id: "445566",
+                  title: "City Lights",
+                  display_artist: "Night Owl",
+                  duration_in_ms: 45000,
+                  web_30s_preview_download_url: "https://cdn.instagram.com/v/city.m4a"
+                }
+              }]
+            }
+          }
+        });
+        (this._listeners.load || []).forEach(fn => fn.call(this));
+      }
+    }
+  }
+  win.XMLHttpRequest = MockXHR;
+  win.fetch = async (url, init = {}) => {
+    const u = String(url);
+    if (u.includes("/api/v1/clips/music/")) {
+      return { ok: false, status: 404, url: u, headers: { get: () => "application/json" }, json: async () => ({}) };
+    }
+    if (u.includes("/api/graphql") && init.body instanceof win.FormData) {
+      sentFormData = init.body;
+    }
+    return { ok: true, url: u, headers: { get: () => "application/json" }, text: async () => "{}" };
+  };
+  win.HTMLMediaElement.prototype.play = async function () {
+    if (playShouldReject) throw new Error("NotSupportedError");
+    Object.defineProperty(this, "paused", { value: false, configurable: true, writable: true });
+  };
+  win.HTMLMediaElement.prototype.pause = function () {
+    Object.defineProperty(this, "paused", { value: true, configurable: true, writable: true });
+  };
+  win.HTMLMediaElement.prototype.load = function () {};
+
+  try {
+    win.eval(scriptSrc);
+
+    const styleText = Array.from(doc.querySelectorAll("style")).map(el => el.textContent).join("\n");
+    assert.match(styleText, /\.ignow-media-viewer,\s*\n\s*\.ignow-note-clip-modal\s*\{\s*\n\s*backdrop-filter:\s*none\s*!important;/);
+
+    // 1. Esc closes image viewer even when focus is on its range slider
+    const img = doc.createElement("img");
+    img.src = "https://cdn.instagram.com/v/photo.jpg";
+    img.getBoundingClientRect = () => ({ left: 10, top: 10, width: 400, height: 400, right: 410, bottom: 410 });
+    doc.body.appendChild(img);
+    img.dispatchEvent(new win.MouseEvent("click", { bubbles: true, ctrlKey: true, cancelable: true }));
+    const zoomSlider = doc.querySelector(".ignow-media-viewer__zoom");
+    assert(zoomSlider, "viewer zoom slider must exist");
+    zoomSlider.focus();
+    zoomSlider.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    assert.equal(doc.querySelector(".ignow-media-viewer"), null, "Esc on viewer zoom slider must close viewer");
+
+    // 2. Seed track and mount Note clip button
+    const searchXhr = new win.XMLHttpRequest();
+    searchXhr.open("POST", "https://www.instagram.com/api/graphql");
+    searchXhr.send("doc_id=123");
+
+    const composer = doc.getElementById("composer");
+    const tSpan = doc.createElement("span");
+    tSpan.textContent = "City Lights";
+    const aSpan = doc.createElement("span");
+    aSpan.textContent = "Night Owl";
+    const rmBtn = doc.createElement("button");
+    rmBtn.setAttribute("aria-label", "Remove song");
+    composer.append(tSpan, aSpan, rmBtn);
+    await new Promise(r => setTimeout(r, 180));
+
+    const clipBtn = doc.querySelector(".ignow-note-clip-btn");
+    assert(clipBtn);
+    clipBtn.click();
+    await new Promise(r => setTimeout(r, 20));
+
+    const modal = doc.querySelector(".ignow-note-clip-modal");
+    assert(modal);
+    const durRange = modal.querySelector(".ignow-note-clip-range");
+    const playBtn = modal.querySelector(".ignow-note-clip-play");
+    const audioEl = modal.querySelector("audio");
+
+    // 3. Audio ended resets button back to ▶ and pauses
+    playBtn.click();
+    await new Promise(r => setTimeout(r, 10));
+    assert.equal(playBtn.textContent, "\u25A0");
+    audioEl.dispatchEvent(new win.Event("ended"));
+    assert.equal(audioEl.paused, true);
+    assert.equal(playBtn.textContent, "\u25B6");
+
+    // 4. Play rejection shows toast while modal is open
+    playShouldReject = true;
+    playBtn.click();
+    await new Promise(r => setTimeout(r, 15));
+    const toast = doc.querySelector(".ignow-toast");
+    assert(toast && toast.textContent.includes("Preview audio is unavailable"), "play rejection must surface toast");
+
+    // 5. Esc while focus is on duration range slider closes modal
+    durRange.focus();
+    durRange.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    assert.equal(doc.querySelector(".ignow-note-clip-modal"), null, "Esc on clip duration range slider must close modal");
+
+    // 6. Apply clip and verify FormData body patching via fetch
+    clipBtn.click();
+    await new Promise(r => setTimeout(r, 20));
+    doc.querySelector("[data-clip-duration='10']").click();
+    doc.querySelector(".ignow-note-clip-apply").click();
+
+    const fd = new win.FormData();
+    fd.append("doc_id", "999");
+    fd.append("variables", JSON.stringify({
+      input: {
+        additional_params: {
+          note_create_params: {
+            note_create_info: {
+              music_note_create_info: { start_time: 0, duration: 30000 }
+            }
+          }
+        }
+      }
+    }));
+    await win.fetch("https://www.instagram.com/api/graphql", { method: "POST", body: fd });
+    const patchedVars = JSON.parse(sentFormData.get("variables"));
+    assert.equal(patchedVars.input.additional_params.note_create_params.note_create_info.music_note_create_info.duration, 10000);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("Issue #8 perf & edge cases: rAF waveform scrubbing, compositor transforms, dirty-checked bars, readyState=0 seek, abortable decode, capped track maps, Request/Uint8Array patching, and reduced-motion/focus-visible", async () => {
+  const { JSDOM } = require("jsdom");
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const scriptSrc = fs.readFileSync(path.join(__dirname, "instagram-tools.js"), "utf8");
+  const profileHtml = fs.readFileSync(path.join(__dirname, "profile.html"), "utf8");
+
+  assert.match(profileHtml, /@media\s*\(prefers-reduced-motion:\s*reduce\)/i, "profile.html must respect prefers-reduced-motion");
+
+  const dom = new JSDOM("<!doctype html><html><body><div id='composer'></div></body></html>", {
+    url: "https://www.instagram.com/direct/inbox/",
+    pretendToBeVisual: true,
+    runScripts: "outside-only"
+  });
+  const win = dom.window;
+  const doc = win.document;
+  const fetchedRequests = [];
+  const abortedSignals = [];
+  let audioFetchResolve = null;
+
+  class MockXHR {
+    constructor() { this._listeners = {}; this.status = 200; this.responseType = ""; this.responseText = ""; }
+    open(_m, url) { this._url = url; }
+    setRequestHeader() {}
+    addEventListener(type, fn) { (this._listeners[type] ||= []).push(fn); }
+    send() {
+      const items = [];
+      for (let i = 0; i < 320; i += 1) {
+        items.push({
+          track: {
+            id: `id-${i}`,
+            audio_cluster_id: `cl-${i}`,
+            audio_asset_id: `as-${i}`,
+            title: `Track ${i}`,
+            display_artist: `Artist ${i}`,
+            duration_in_ms: 90000,
+            web_30s_preview_download_url: `https://cdn.instagram.com/v/p-${i}.m4a`
+          }
+        });
+      }
+      this.responseText = JSON.stringify({ data: { music_search: { items } } });
+      (this._listeners.load || []).forEach(fn => fn.call(this));
+    }
+  }
+  win.XMLHttpRequest = MockXHR;
+  win.TextDecoder = TextDecoder;
+  win.TextEncoder = TextEncoder;
+  win.Request = class MockRequest {
+    constructor(input, init = {}) {
+      if (input instanceof MockRequest) {
+        this.url = input.url;
+        this.method = init.method || input.method || "GET";
+        this._body = "body" in init ? init.body : input._body;
+      } else {
+        this.url = String(input);
+        this.method = init.method || "GET";
+        this._body = init.body ?? "";
+      }
+    }
+    clone() {
+      return new MockRequest(this);
+    }
+    async text() {
+      return typeof this._body === "string" ? this._body : String(this._body ?? "");
+    }
+  };
+  win.AudioContext = class MockAudioContext {
+    decodeAudioData() { return Promise.reject(new Error("skip")); }
+    close() { return Promise.resolve(); }
+  };
+  win.fetch = async (input, init = {}) => {
+    const u = typeof input === "string" ? input : String(input?.url || "");
+    if (u.includes("p-319.m4a") || u.includes("full-319.m4a")) {
+      if (init?.signal) {
+        init.signal.addEventListener("abort", () => abortedSignals.push(u));
+      }
+      return new Promise(resolve => {
+        audioFetchResolve = () => resolve({ ok: false, status: 499 });
+      });
+    }
+    if (u.includes("/api/v1/clips/music/")) {
+      return {
+        ok: true,
+        url: u,
+        headers: { get: () => "application/json" },
+        json: async () => ({
+          metadata: {
+            music_info: {
+              music_asset_info: {
+                audio_cluster_id: "cl-319",
+                audio_asset_id: "as-319",
+                title: "Track 319",
+                display_artist: "Artist 319",
+                duration_in_ms: 120000,
+                fast_start_progressive_download_url: "https://cdn.instagram.com/v/full-319.m4a",
+                highlight_start_times_in_ms: [45000]
+              }
+            }
+          }
+        })
+      };
+    }
+    if (u.includes("/api/graphql")) {
+      let bodyText = "";
+      if (typeof init.body === "string") bodyText = init.body;
+      else if (init.body && ArrayBuffer.isView(init.body)) bodyText = Buffer.from(init.body.buffer, init.body.byteOffset, init.body.byteLength).toString("utf8");
+      else if (typeof win.Request === "function" && input instanceof win.Request) bodyText = await input.clone().text();
+      fetchedRequests.push({ url: u, bodyText, signal: init?.signal || null });
+    }
+    return { ok: true, url: u, headers: { get: () => "application/json" }, text: async () => "{}" };
+  };
+  win.HTMLMediaElement.prototype.play = async function () {
+    Object.defineProperty(this, "paused", { value: false, configurable: true, writable: true });
+  };
+  win.HTMLMediaElement.prototype.pause = function () {
+    Object.defineProperty(this, "paused", { value: true, configurable: true, writable: true });
+  };
+  win.HTMLMediaElement.prototype.load = function () {};
+
+  try {
+    win.eval(scriptSrc);
+
+    // 1. CSS checks: compositor-only volume slider, reduced-motion coverage, range focus-visible
+    const styleText = Array.from(doc.querySelectorAll("style")).map(el => el.textContent).join("\n");
+    const volRule = styleText.match(/^\s*\.ignow-video-controls__volume-slider\s*\{[^}]*\}/m)?.[0] || "";
+    assert.equal(/transition:\s*width\b/i.test(volRule), false, "volume slider must not animate layout width");
+    assert.match(volRule, /width:\s*64px\s*!important/i);
+    assert.match(volRule, /scaleX\(0\)/i);
+    assert.match(styleText, /\.ignow-note-clip-range:focus-visible/);
+    const reducedBlock = styleText.match(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{[\s\S]*?\n\s*\}/)?.[0] || "";
+    assert.match(reducedBlock, /\.ignow-video-controls__volume-slider/);
+    assert.match(reducedBlock, /\.ignow-sidebar-back/);
+    assert.match(reducedBlock, /\.ignow-sidebar-back__icon/);
+
+    // 2. Track map caps: 320 tracks -> tracksById <= 200, tracksByTitle <= 300
+    const searchXhr = new win.XMLHttpRequest();
+    searchXhr.open("POST", "https://www.instagram.com/api/graphql");
+    searchXhr.send("doc_id=cap");
+
+    const composer = doc.getElementById("composer");
+    const tSpan = doc.createElement("span");
+    tSpan.textContent = "Track 319";
+    const aSpan = doc.createElement("span");
+    aSpan.textContent = "Artist 319";
+    const rmBtn = doc.createElement("button");
+    rmBtn.setAttribute("aria-label", "Remove song");
+    composer.append(tSpan, aSpan, rmBtn);
+    await new Promise(r => setTimeout(r, 180));
+
+    // Check internal cap via old track 0 fallback: Track 0 must be evicted from tracksByTitle (320*2 = 640 > 300)
+    // Open modal on Track 319
+    const clipBtn = doc.querySelector(".ignow-note-clip-btn");
+    clipBtn.click();
+    await new Promise(r => setTimeout(r, 30));
+
+    const modal = doc.querySelector(".ignow-note-clip-modal");
+    assert(modal);
+    const winOverlay = modal.querySelector(".ignow-note-clip-window");
+    const progFill = modal.querySelector(".ignow-note-clip-progress-fill");
+    const scrubber = modal.querySelector(".ignow-note-clip-waveform");
+    const audioEl = modal.querySelector("audio");
+
+    // 3. Window & progress fill must use transform (not left/width)
+    assert.equal(winOverlay.style.left, "", "winOverlay must not animate style.left");
+    assert.equal(winOverlay.style.width, "", "winOverlay must not animate style.width");
+    assert.match(winOverlay.style.transform, /translateX\([^)]+\)\s*scaleX\(/);
+    assert.equal(progFill.style.width, "", "progFill must not animate style.width");
+    assert.match(progFill.style.transform, /scaleX\(/);
+
+    // 4. Waveform scrubber caches rect on pointerdown & rAF-coalesces pointermove & dirty-checks bars
+    let rectCalls = 0;
+    scrubber.getBoundingClientRect = () => {
+      rectCalls += 1;
+      return { left: 0, top: 0, width: 240, height: 68, right: 240, bottom: 68 };
+    };
+    const bar0 = modal.querySelector(".ignow-note-clip-bar");
+    let barAttrWrites = 0;
+    const origSetAttr = bar0.setAttribute.bind(bar0);
+    bar0.setAttribute = (k, v) => {
+      barAttrWrites += 1;
+      return origSetAttr(k, v);
+    };
+
+    const makePtr = (type, props) => new win.MouseEvent(type, { bubbles: true, button: 0, ...props });
+    scrubber.dispatchEvent(makePtr("pointerdown", { clientX: 60 }));
+    for (let x = 65; x <= 140; x += 15) {
+      scrubber.dispatchEvent(makePtr("pointermove", { clientX: x }));
+    }
+    await new Promise(r => setTimeout(r, 35));
+    scrubber.dispatchEvent(makePtr("pointerup", { clientX: 140 }));
+    assert.equal(rectCalls, 1, "waveform drag must cache getBoundingClientRect on pointerdown");
+
+    // Unchanged timeupdate must not rewrite bar0 attributes
+    const writesAfterDrag = barAttrWrites;
+    audioEl.dispatchEvent(new win.Event("timeupdate"));
+    assert.equal(barAttrWrites, writesAfterDrag, "unchanged timeupdate must not rewrite waveform bar attributes");
+
+    // 5. Audio seek before loadedmetadata (readyState === 0) defers until loadedmetadata
+    let currentTimeVal = 0;
+    let readyStateVal = 0;
+    Object.defineProperty(audioEl, "readyState", { get: () => readyStateVal, configurable: true });
+    Object.defineProperty(audioEl, "currentTime", {
+      get: () => currentTimeVal,
+      set: v => {
+        if (readyStateVal === 0) currentTimeVal = 0; // simulate WKWebView resetting pre-metadata seeks
+        else currentTimeVal = Number(v);
+      },
+      configurable: true
+    });
+    modal.querySelector("[data-highlight-ms='45000']").click();
+    modal.querySelector(".ignow-note-clip-play").click();
+    await new Promise(r => setTimeout(r, 15));
+    readyStateVal = 1;
+    audioEl.dispatchEvent(new win.Event("loadedmetadata"));
+    assert.equal(currentTimeVal, 45, "pending seek must apply once loadedmetadata fires");
+
+    // 6. Closing modal aborts in-flight waveform decode fetch
+    modal.querySelector(".ignow-note-clip-apply").click();
+    assert.equal(abortedSignals.length, 1, "closing clip modal must abort waveform audio decode fetch");
+    if (audioFetchResolve) audioFetchResolve();
+
+    // 7. fetch(Request) and Uint8Array + nested JSON-string variables patching
+    const reqBody = JSON.stringify({
+      variables: JSON.stringify({
+        input: {
+          additional_params: {
+            note_create_params: {
+              note_create_info: {
+                music_note_create_info: { start_time: 0, duration: 30000 }
+              }
+            }
+          }
+        }
+      })
+    });
+    await win.fetch(new win.Request("https://www.instagram.com/api/graphql", { method: "POST", body: reqBody }));
+    const reqSent = JSON.parse(fetchedRequests[fetchedRequests.length - 1].bodyText);
+    const innerVars = JSON.parse(reqSent.variables);
+    assert.equal(innerVars.input.additional_params.note_create_params.note_create_info.music_note_create_info.start_time, 45000);
+
+    // Re-apply and test Uint8Array body
+    clipBtn.click();
+    await new Promise(r => setTimeout(r, 20));
+    doc.querySelector("[data-clip-duration='10']").click();
+    doc.querySelector(".ignow-note-clip-apply").click();
+    const u8Body = new TextEncoder().encode(JSON.stringify({
+      variables: JSON.stringify({
+        input: {
+          additional_params: {
+            note_create_params: {
+              note_create_info: {
+                music_note_create_info: { start_time: 0, duration: 30000 }
+              }
+            }
+          }
+        }
+      })
+    }));
+    await win.fetch("https://www.instagram.com/api/graphql", { method: "POST", body: u8Body });
+    const u8Sent = JSON.parse(fetchedRequests[fetchedRequests.length - 1].bodyText);
+    const u8Inner = JSON.parse(u8Sent.variables);
+    assert.equal(u8Inner.input.additional_params.note_create_params.note_create_info.music_note_create_info.duration, 10000);
+
+    // 8. Scrubbing past audio.duration (30s preview on a 120s track) plays from 0s with toast instead of clamping & ending
+    clipBtn.click();
+    await new Promise(r => setTimeout(r, 20));
+    const modal2 = doc.querySelector(".ignow-note-clip-modal");
+    const audio2 = modal2.querySelector("audio");
+    const playBtn2 = modal2.querySelector(".ignow-note-clip-play");
+    let curTime2 = 0;
+    Object.defineProperty(audio2, "readyState", { value: 2, configurable: true });
+    Object.defineProperty(audio2, "duration", { value: 30, configurable: true });
+    Object.defineProperty(audio2, "currentTime", {
+      get: () => curTime2,
+      set: v => { curTime2 = Math.max(0, Math.min(30, Number(v))); },
+      configurable: true
+    });
+    modal2.querySelector("[data-highlight-ms='45000']").click();
+    playBtn2.click();
+    await new Promise(r => setTimeout(r, 15));
+    assert.equal(curTime2, 0, "preview-only track scrubbed past audio.duration must play from 0s instead of clamping to duration");
+    assert.equal(audio2.paused, false);
+    assert.equal(playBtn2.textContent, "\u25A0");
+    assert(doc.querySelector(".ignow-toast")?.textContent.includes("playing preview from start"), "must surface non-blocking bounded-preview toast");
+    curTime2 = 12;
+    audio2.dispatchEvent(new win.Event("timeupdate"));
+    assert.match(modal2.querySelector(".ignow-note-clip-progress-fill").style.transform, /scaleX\(0\.4/);
+    modal2.querySelector(".ignow-note-clip-close").click();
+
+    // 9. probePostForDownloader passes AbortSignal to fetch
+    win.__TAURI__ = { core: { invoke: async () => true } };
+    await win.__ignowTools.probePostForDownloader("req-1", "https://www.instagram.com/p/C9xTestCode/");
+    const probeFetch = fetchedRequests[fetchedRequests.length - 1];
+    assert(probeFetch.signal, "probePostForDownloader GraphQL fetch must pass AbortSignal timeout");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("Viewer pointermove rAF-coalesces pan transforms, load skips small/nav images, and syncNoteMusicClipButton caches DOM/style lookups", async () => {
+  const f = createFixture("/direct/inbox/");
+  try {
+    const { win } = f;
+    const doc = win.document;
+
+    // 1. Image load on <120px avatar or nav image must not schedule scanVideos
+    let videoQueries = 0;
+    const origQsa = doc.querySelectorAll.bind(doc);
+    doc.querySelectorAll = sel => {
+      if (sel === "video") videoQueries += 1;
+      return origQsa(sel);
+    };
+    const smallImg = doc.createElement("img");
+    smallImg.src = "https://cdn.instagram.com/avatar.jpg";
+    Object.defineProperty(smallImg, "naturalWidth", { value: 44, configurable: true });
+    Object.defineProperty(smallImg, "naturalHeight", { value: 44, configurable: true });
+    doc.body.appendChild(smallImg);
+    await new Promise(r => setTimeout(r, 160));
+    videoQueries = 0;
+    smallImg.dispatchEvent(new win.Event("load", { bubbles: false }));
+    await new Promise(r => setTimeout(r, 150));
+    assert.equal(videoQueries, 0, "small <120px image load must not schedule scanVideos");
+    doc.querySelectorAll = origQsa;
+
+    // 2. syncNoteMusicClipButton caches Remove song + getComputedStyle across repeated scroll scans
+    const rmBtn = doc.createElement("button");
+    rmBtn.setAttribute("aria-label", "Remove song");
+    const wrap = doc.createElement("div");
+    wrap.appendChild(rmBtn);
+    doc.body.appendChild(wrap);
+    win.dispatchEvent(new win.Event("scroll"));
+    await new Promise(r => setTimeout(r, 160));
+    assert(doc.querySelector(".ignow-note-clip-btn"));
+
+    let gcsCalls = 0;
+    const origGcs = win.getComputedStyle.bind(win);
+    win.getComputedStyle = (...args) => { gcsCalls += 1; return origGcs(...args); };
+    win.dispatchEvent(new win.Event("scroll"));
+    await new Promise(r => setTimeout(r, 160));
+    assert.equal(gcsCalls, 0, "repeated scan on unchanged Note composer must not re-run getComputedStyle");
+
+    // 3. Viewer pointermove coalesces via rAF and skips redundant zoomLabel writes
+    const triggerImg = doc.createElement("img");
+    triggerImg.src = "https://cdn.instagram.com/viewer.jpg";
+    setRect(triggerImg, { left: 100, top: 100, width: 400, height: 400 });
+    doc.body.appendChild(triggerImg);
+    triggerImg.dispatchEvent(new win.MouseEvent("click", { bubbles: true, ctrlKey: true, cancelable: true }));
+    const overlay = doc.querySelector(".ignow-media-viewer");
+    const viewport = overlay.querySelector(".ignow-media-viewer__viewport");
+    const zoomLabel = overlay.querySelector(".ignow-media-viewer__zoom-label");
+    let labelWrites = 0;
+    const origTextDesc = Object.getOwnPropertyDescriptor(win.Node.prototype, "textContent");
+    Object.defineProperty(zoomLabel, "textContent", {
+      get() { return origTextDesc.get.call(this); },
+      set(v) { labelWrites += 1; return origTextDesc.set.call(this, v); },
+      configurable: true
+    });
+    const makePtr = (type, props) => Object.assign(new win.MouseEvent(type, { bubbles: true, button: 0, ...props }), { pointerId: 7 });
+    viewport.dispatchEvent(makePtr("pointerdown", { clientX: 10, clientY: 10 }));
+    for (let i = 1; i <= 5; i += 1) {
+      viewport.dispatchEvent(makePtr("pointermove", { clientX: 10 + i * 10, clientY: 10 + i * 10 }));
+    }
+    await new Promise(r => setTimeout(r, 40));
+    viewport.dispatchEvent(makePtr("pointerup", { clientX: 60, clientY: 60 }));
+    assert.equal(labelWrites, 0, "panning viewer must not rewrite unchanged zoomLabel textContent");
+    assert(overlay.querySelector(".ignow-media-viewer__image").style.transform.includes("translate(calc(-50% + 50px), calc(-50% + 50px))"));
+    overlay.querySelector(".ignow-media-viewer__close").click();
   } finally {
     f.dom.window.close();
   }

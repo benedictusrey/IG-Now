@@ -6,16 +6,35 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g. v2.5.0)'
+        description: 'Release tag (e.g. v2.5.3)'
         required: true
-        default: 'v2.5.0'
+        default: 'v2.5.3'
 
 concurrency:
   group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
+  prepare:
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    name: Prepare release draft
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+      - name: Ensure single draft release exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if ! gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq '.[].tagName' | grep -Fxq "$TAG"; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --title "IG-Now $TAG" --notes-file RELEASE_NOTES.md
+          fi
+
   build:
+    needs: prepare
     permissions:
       contents: write
     strategy:
@@ -23,16 +42,19 @@ jobs:
       matrix:
         include:
           - platform: windows-latest
+            engine: tauri
             args: ''
             name: Windows (x64)
             rust_targets: x86_64-pc-windows-msvc
           - platform: macos-latest
+            engine: tauri
             args: '--target universal-apple-darwin'
             name: macOS (Universal)
             rust_targets: 'aarch64-apple-darwin x86_64-apple-darwin'
           - platform: ubuntu-22.04
+            engine: electron-linux
             args: ''
-            name: Linux (x64)
+            name: Linux (x64 · Electron)
             rust_targets: x86_64-unknown-linux-gnu
     runs-on: ${{ matrix.platform }}
     name: Build · ${{ matrix.name }}
@@ -44,7 +66,7 @@ jobs:
         if: startsWith(matrix.platform, 'ubuntu-')
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf rpm
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev rpm libfuse2 xz-utils
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.rust_targets }}
@@ -64,20 +86,46 @@ jobs:
           node --check frontend/downloader.js
           cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
           cargo test --manifest-path src-tauri/Cargo.toml --locked --lib
+      - name: Verify Electron-for-Linux
+        if: matrix.engine == 'electron-linux'
+        working-directory: electron-linux
+        run: |
+          npm ci
+          npm test
+          node --check backend.js
+          node --check main.js
+          node --check preload-instagram.js
+          node --check preload-downloader.js
+          node --check test.cjs
       - name: Put Homebrew sbin on PATH
         if: startsWith(matrix.platform, 'macos-')
         run: echo "$(brew --prefix)/sbin" >> "$GITHUB_PATH"
-      - name: Build release packages
+      - name: Build Tauri release packages
+        if: matrix.engine == 'tauri'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ inputs.tag || github.ref_name }}
           releaseName: 'IG-Now ${{ inputs.tag || github.ref_name }}'
-          releaseBody: 'Built-in native Downloader workbench (.mp4 H.264+AAC, Audio Only .m4a, up to 20-slide carousels & captions), sidebar Downloader/Forward/Back navigation with Esc pre-click return, Windows Core Audio grouped IG-Now session + mute icon sync, and centered 1588x1025 layout preserving original Instagram comments. See RELEASE_NOTES.md for usage and checksum details.'
+          releaseBody: 'Windows & macOS (Tauri v2) + Linux (Electron-for-Linux) release with H.264+AAC MP4 & lossless/alpha PNG/JPEG normalization, codec-aware DASH selection, macOS Dock reopen & Cmd parity, and unified release packaging. See RELEASE_NOTES.md for details.'
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+      - name: Build Electron-for-Linux release packages
+        if: matrix.engine == 'electron-linux'
+        working-directory: electron-linux
+        run: npm run dist
+      - name: Upload Linux release packages
+        if: matrix.engine == 'electron-linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: |
+            electron-linux/dist/*.AppImage
+            electron-linux/dist/*.deb
+            electron-linux/dist/*.rpm
+          if-no-files-found: error
 
   publish:
     permissions:
@@ -88,14 +136,24 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.tag || github.ref_name }}
+      - name: Download Windows & macOS release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          mkdir -p release-assets
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir release-assets
+      - name: Download Linux release packages
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-packages
+          path: release-assets
       - name: Verify assets, upload checksum manifests, and publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
-          mkdir release-assets
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir release-assets
           cd release-assets
           rm -f checksums.txt SHA256SUMS.txt
           # Publication must fail if any supported platform package is missing.
@@ -105,5 +163,5 @@ jobs:
           find . -maxdepth 1 -type f -printf '%f\0' | sort -z | xargs -0 sha256sum > ../checksums.txt
           cd ..
           cp checksums.txt SHA256SUMS.txt
-          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" checksums.txt SHA256SUMS.txt --clobber
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" release-assets/*.AppImage release-assets/*.deb release-assets/*.rpm checksums.txt SHA256SUMS.txt --clobber
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file RELEASE_NOTES.md --draft=false --latest

@@ -41,6 +41,10 @@
   let previewThumb = null;
   let lastAutoClipboardUrl = "";
   let queuedContext = null;
+  const isMacPlatform = /Mac|iPhone|iPad|iPod/i.test(
+    navigator.userAgentData?.platform || navigator.platform || ""
+  );
+  const modKeyLabel = isMacPlatform ? "Cmd" : "Ctrl";
 
   function invoke(command, args = {}) {
     const fn = window.__TAURI__?.core?.invoke;
@@ -71,7 +75,7 @@
     if (clearUrlBtn) clearUrlBtn.hidden = !val;
     if (urlHint) {
       if (!val) {
-        urlHint.textContent = "Auto-inspects on open or paste \u00b7 Ctrl+L to focus";
+        urlHint.textContent = `Auto-inspects on open or paste \u00b7 ${modKeyLabel}+L to focus`;
       } else if (isInstagramMediaLink(val) || /^[A-Za-z0-9_-]{5,32}$/.test(val)) {
         urlHint.textContent = "Instagram link detected";
       } else {
@@ -578,7 +582,7 @@
       // Clipboard read may be unavailable without focus gesture.
     }
     urlInput.focus();
-    setStatus("Press Ctrl+V to paste link; inspection starts automatically.");
+    setStatus(`Press ${modKeyLabel}+V to paste link; inspection starts automatically.`);
   });
 
   if (clearUrlBtn) {
@@ -725,7 +729,7 @@
     } else {
       const item = currentSlideItem();
       setStatus(item?.kind === "image"
-        ? "Saving full-resolution image (.jpg) to Downloads/IG-Now..."
+        ? "Saving full-resolution image to Downloads/IG-Now..."
         : "Downloading selected media...");
     }
     try {

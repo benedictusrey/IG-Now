@@ -272,8 +272,9 @@
 
     .ignow-video-controls__volume-group:hover .ignow-video-controls__volume-slider,
     .ignow-video-controls__volume-group.ignow-volume-open .ignow-video-controls__volume-slider {
-      width: 64px !important;
+      transform: scaleX(1) !important;
       opacity: 1 !important;
+      pointer-events: auto !important;
     }
 
     .ignow-video-controls__volume-slider {
@@ -283,7 +284,7 @@
       top: auto !important;
       z-index: 2 !important;
       flex: 0 0 auto !important;
-      width: 0 !important;
+      width: 64px !important;
       min-width: 0 !important;
       height: 23px !important;
       min-height: 23px !important;
@@ -291,6 +292,8 @@
       padding: 10px 0 !important;
       border: 0 !important;
       border-radius: 999px !important;
+      transform: scaleX(0) !important;
+      transform-origin: left center !important;
       opacity: 0 !important;
       overflow: hidden !important;
       box-sizing: border-box !important;
@@ -304,11 +307,11 @@
       background-clip: content-box !important;
       box-shadow: 0 1px 4px rgba(0, 0, 0, 0.75) !important;
       cursor: pointer !important;
-      pointer-events: auto !important;
+      pointer-events: none !important;
       appearance: none !important;
       -webkit-appearance: none !important;
       accent-color: #fff !important;
-      transition: width 0.16s ease, opacity 0.16s ease !important;
+      transition: transform 0.16s ease, opacity 0.16s ease !important;
     }
 
     .ignow-video-controls__volume-slider::-webkit-slider-runnable-track {
@@ -329,8 +332,9 @@
     }
 
     .ignow-video-controls__volume-slider:focus-visible {
-      width: 64px !important;
+      transform: scaleX(1) !important;
       opacity: 1 !important;
+      pointer-events: auto !important;
       outline: 2px solid #f4f5f7 !important;
       outline-offset: 2px !important;
     }
@@ -616,7 +620,14 @@
     }
 
     @media (prefers-reduced-motion: reduce) {
-      .ignow-image-download-btn {
+      .ignow-image-download-btn,
+      .ignow-video-controls__volume-slider,
+      .ignow-sidebar-back,
+      .ignow-sidebar-forward,
+      .ignow-sidebar-downloader,
+      .ignow-sidebar-back__icon,
+      .ignow-sidebar-forward__icon,
+      .ignow-sidebar-downloader__icon {
         transition: none !important;
       }
     }
@@ -636,6 +647,329 @@
       font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
       font-variant-numeric: tabular-nums;
     }
+
+    .ignow-note-clip-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      height: 26px;
+      margin: 0 6px 0 0;
+      padding: 0 10px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 999px;
+      background: #232429;
+      color: #f5f5f5;
+      font: 600 12px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-variant-numeric: tabular-nums;
+      cursor: pointer;
+      flex: 0 0 auto;
+    }
+
+    .ignow-note-clip-btn:hover {
+      background: #30323a;
+      border-color: rgba(255, 255, 255, 0.34);
+    }
+
+    .ignow-note-clip-btn:focus-visible {
+      outline: 2px solid #f4f5f7;
+      outline-offset: 2px;
+    }
+
+    .ignow-note-clip-btn--floating {
+      position: absolute;
+      right: calc(100% + 6px);
+      top: 50%;
+      transform: translateY(-50%);
+      margin: 0;
+      white-space: nowrap;
+      z-index: 2;
+    }
+
+    .ignow-note-clip-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 2147483647;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      background: rgba(6, 7, 10, 0.8);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      color: #f5f5f5;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    .ignow-note-clip-modal * {
+      box-sizing: border-box;
+    }
+
+    .ignow-note-clip-card {
+      width: 440px;
+      max-width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      padding: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 18px;
+      background: #121214;
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.78);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .ignow-note-clip-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .ignow-note-clip-cover {
+      width: 48px;
+      height: 48px;
+      border-radius: 10px;
+      object-fit: cover;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: #1f2026;
+      flex: 0 0 auto;
+    }
+
+    .ignow-note-clip-meta {
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+
+    .ignow-note-clip-title-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .ignow-note-clip-title {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 700;
+      color: #f5f5f5;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .ignow-note-clip-explicit {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.18);
+      color: #f5f5f5;
+      font-size: 10px;
+      font-weight: 700;
+      flex: 0 0 auto;
+    }
+
+    .ignow-note-clip-artist {
+      margin-top: 2px;
+      font-size: 12.5px;
+      color: #a1a1aa;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .ignow-note-clip-close {
+      width: 30px;
+      height: 30px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 999px;
+      background: #1d1e23;
+      color: #e4e4e7;
+      font-size: 16px;
+      cursor: pointer;
+      flex: 0 0 auto;
+    }
+
+    .ignow-note-clip-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .ignow-note-clip-play {
+      width: 34px;
+      height: 34px;
+      border: 0;
+      border-radius: 999px;
+      background: #f5f5f5;
+      color: #121214;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+    }
+
+    .ignow-note-clip-progress {
+      position: relative;
+      flex: 1 1 auto;
+      height: 4px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.16);
+      overflow: hidden;
+    }
+
+    .ignow-note-clip-progress-fill {
+      height: 100%;
+      width: 100%;
+      transform-origin: left center;
+      transform: scaleX(0);
+      border-radius: 999px;
+      background: linear-gradient(90deg, #f97316, #ec4899);
+    }
+
+    .ignow-note-clip-dur-badge {
+      min-width: 34px;
+      height: 26px;
+      padding: 0 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      color: #f5f5f5;
+    }
+
+    .ignow-note-clip-waveform {
+      position: relative;
+      height: 68px;
+      padding: 8px 10px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: #1a1b20;
+      display: flex;
+      align-items: center;
+      cursor: ew-resize;
+      touch-action: none;
+      user-select: none;
+      overflow: hidden;
+    }
+
+    .ignow-note-clip-window {
+      position: absolute;
+      left: 0;
+      width: 100%;
+      top: 4px;
+      bottom: 4px;
+      transform-origin: left center;
+      border-radius: 10px;
+      background: linear-gradient(90deg, #facc15 0%, #f97316 34%, #ec4899 68%, #a855f7 100%);
+      pointer-events: none;
+    }
+
+    .ignow-note-clip-bars {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      pointer-events: none;
+    }
+
+    .ignow-note-clip-bar {
+      flex: 1 1 0;
+      min-width: 2px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.22);
+    }
+
+    .ignow-note-clip-bar[data-active="1"] {
+      background: rgba(255, 255, 255, 0.56);
+    }
+
+    .ignow-note-clip-bar[data-played="1"] {
+      background: #ffffff;
+    }
+
+    .ignow-note-clip-times,
+    .ignow-note-clip-dur-row,
+    .ignow-note-clip-chips,
+    .ignow-note-clip-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+      font-size: 12px;
+      color: #a1a1aa;
+    }
+
+    .ignow-note-clip-chips {
+      justify-content: flex-start;
+    }
+
+    .ignow-note-clip-pill {
+      height: 26px;
+      padding: 0 10px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 999px;
+      background: #1d1e23;
+      color: #e4e4e7;
+      font: 600 12px/1 inherit;
+      cursor: pointer;
+    }
+
+    .ignow-note-clip-pill[aria-pressed="true"] {
+      background: #f5f5f5;
+      border-color: #f5f5f5;
+      color: #121214;
+    }
+
+    .ignow-note-clip-range {
+      flex: 1 1 110px;
+      accent-color: #ec4899;
+      cursor: pointer;
+    }
+
+    .ignow-note-clip-footer {
+      justify-content: flex-end;
+      padding-top: 6px;
+      border-top: 1px solid rgba(255, 255, 255, 0.09);
+    }
+
+    .ignow-note-clip-apply {
+      height: 32px;
+      padding: 0 14px;
+      border: 0;
+      border-radius: 999px;
+      background: #f5f5f5;
+      color: #121214;
+      font: 700 12.5px/1 inherit;
+      cursor: pointer;
+    }
+
+    .ignow-note-clip-close:focus-visible,
+    .ignow-note-clip-play:focus-visible,
+    .ignow-note-clip-waveform:focus-visible,
+    .ignow-note-clip-pill:focus-visible,
+    .ignow-note-clip-range:focus-visible,
+    .ignow-note-clip-apply:focus-visible {
+      outline: 2px solid #3b82f6;
+      outline-offset: 2px;
+    }
+    ${window.__ignowDisableBackdropBlur ? `
+    .ignow-media-viewer,
+    .ignow-note-clip-modal {
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+      background: rgba(0, 0, 0, 0.9) !important;
+    }` : ""}
   `;
 
   function appendStyle() {
@@ -1806,12 +2140,34 @@
       .replaceAll("&amp;", "&");
   }
 
+  function videoCodecRank(codecs) {
+    const c = String(codecs ?? "").trim().toLowerCase();
+    if (!c) return 2;
+    if (c.includes("avc1") || c.includes("avc3") || c.includes("h264")) return 4;
+    if (c.includes("hev1") || c.includes("hvc1") || c.includes("hevc")) return 3;
+    if (c.includes("vp09") || c.includes("vp9") || c.includes("vp8")) return 1;
+    if (c.includes("av01") || c.includes("av1")) return 0;
+    return 2;
+  }
+
+  function audioCodecRank(codecs) {
+    const c = String(codecs ?? "").trim().toLowerCase();
+    if (!c) return 2;
+    if (c.includes("mp4a") || c.includes("aac")) return 3;
+    if (c.includes("opus")) return 0;
+    return 1;
+  }
+
   function bestUrlsFromVersions(versions) {
     if (!Array.isArray(versions)) return [];
     return versions
       .filter(entry => entry && typeof entry.url === "string" && /^https?:\/\//i.test(entry.url))
       .slice()
-      .sort((a, b) => ((Number(b.width) || 0) * (Number(b.height) || 0)) - ((Number(a.width) || 0) * (Number(a.height) || 0)))
+      .sort((a, b) =>
+        ((Number(b.width) || 0) * (Number(b.height) || 0)) - ((Number(a.width) || 0) * (Number(a.height) || 0))
+        || videoCodecRank(b.codecs) - videoCodecRank(a.codecs)
+        || (Number(b.bandwidth) || 0) - (Number(a.bandwidth) || 0)
+      )
       .map(entry => normalizeMediaUrl(entry.url))
       .filter(url => url && !isLikelyMediaSegment(url));
   }
@@ -1868,40 +2224,83 @@
     return headers;
   }
 
+  function readXmlAttr(tag, name) {
+    const m = String(tag || "").match(new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "i"));
+    return m ? (m[1] ?? m[2] ?? "") : "";
+  }
+
   function extractDashTracks(xmlText) {
     if (typeof xmlText !== "string" || !xmlText.includes("<BaseURL")) {
       return { videoUrls: [], audioUrl: "" };
     }
-    const videoUrls = [];
-    const audioUrls = [];
+    const videoTracks = [];
+    const audioTracks = [];
     const setRegex = /<AdaptationSet\b([^>]*)>([\s\S]*?)<\/AdaptationSet>/gi;
     let setMatch;
     while ((setMatch = setRegex.exec(xmlText)) !== null) {
       const attrs = setMatch[1] || "";
       const body = setMatch[2] || "";
-      const isAudioSet = /contentType=["']audio|mimeType=["']audio\//i.test(attrs)
-        || (/codecs=["']mp4a/i.test(body) && !/width=["']\d/i.test(body));
-      const baseRegex = /<BaseURL[^>]*>([^<]+)<\/BaseURL>/gi;
-      let baseMatch;
-      while ((baseMatch = baseRegex.exec(body)) !== null) {
+      const setMime = (readXmlAttr(attrs, "mimeType") || readXmlAttr(attrs, "contentType")).toLowerCase();
+      const repRegex = /<Representation\b([^>]*)>([\s\S]*?)<\/Representation>/gi;
+      let repMatch;
+      let matchedRep = false;
+      while ((repMatch = repRegex.exec(body)) !== null) {
+        matchedRep = true;
+        const repAttrs = repMatch[1] || "";
+        const repBody = repMatch[2] || "";
+        const codecs = readXmlAttr(repAttrs, "codecs");
+        const repMime = (readXmlAttr(repAttrs, "mimeType") || setMime).toLowerCase();
+        const width = Number.parseInt(readXmlAttr(repAttrs, "width") || readXmlAttr(attrs, "width") || "0", 10) || 0;
+        const height = Number.parseInt(readXmlAttr(repAttrs, "height") || readXmlAttr(attrs, "height") || "0", 10) || 0;
+        const bandwidth = Number.parseInt(readXmlAttr(repAttrs, "bandwidth") || "0", 10) || 0;
+        const baseMatch = /<BaseURL[^>]*>([^<]+)<\/BaseURL>/i.exec(repBody);
+        if (!baseMatch) continue;
         const decoded = stripMediaRangeParams(normalizeMediaUrl(baseMatch[1].trim()));
         if (!/^https?:\/\//i.test(decoded) || isLikelyMediaSegment(decoded)) continue;
-        if (isAudioSet) audioUrls.push(decoded);
-        else videoUrls.push(decoded);
+        const lowerCodecs = codecs.toLowerCase();
+        const isAudio = repMime.includes("audio")
+          || lowerCodecs.startsWith("mp4a")
+          || lowerCodecs.includes("opus")
+          || (width === 0 && height === 0 && (setMime.includes("audio") || /audiosamplingrate/i.test(repAttrs)));
+        const track = { url: decoded, width, height, bandwidth, codecs };
+        if (isAudio) audioTracks.push(track);
+        else videoTracks.push(track);
+      }
+      if (!matchedRep) {
+        const isAudioSet = /contentType=["']audio|mimeType=["']audio\//i.test(attrs)
+          || (/codecs=["']mp4a/i.test(body) && !/width=["']\d/i.test(body));
+        const baseRegex = /<BaseURL[^>]*>([^<]+)<\/BaseURL>/gi;
+        let baseMatch;
+        while ((baseMatch = baseRegex.exec(body)) !== null) {
+          const decoded = stripMediaRangeParams(normalizeMediaUrl(baseMatch[1].trim()));
+          if (!/^https?:\/\//i.test(decoded) || isLikelyMediaSegment(decoded)) continue;
+          const track = { url: decoded, width: 0, height: 0, bandwidth: 0, codecs: "" };
+          if (isAudioSet) audioTracks.push(track);
+          else videoTracks.push(track);
+        }
       }
     }
-    if (!videoUrls.length && !audioUrls.length) {
+    if (!videoTracks.length && !audioTracks.length) {
       const matches = xmlText.matchAll(/<BaseURL[^>]*>([^<]+)<\/BaseURL>/gi);
       for (const match of matches) {
         const decoded = stripMediaRangeParams(normalizeMediaUrl(match[1].trim()));
         if (/^https?:\/\//i.test(decoded) && !isLikelyMediaSegment(decoded)) {
-          videoUrls.push(decoded);
+          videoTracks.push({ url: decoded, width: 0, height: 0, bandwidth: 0, codecs: "" });
         }
       }
     }
+    videoTracks.sort((a, b) =>
+      (b.width * b.height) - (a.width * a.height)
+      || videoCodecRank(b.codecs) - videoCodecRank(a.codecs)
+      || b.bandwidth - a.bandwidth
+    );
+    audioTracks.sort((a, b) =>
+      audioCodecRank(b.codecs) - audioCodecRank(a.codecs)
+      || b.bandwidth - a.bandwidth
+    );
     return {
-      videoUrls: Array.from(new Set(videoUrls)),
-      audioUrl: audioUrls[0] || ""
+      videoUrls: Array.from(new Set(videoTracks.map(t => t.url))),
+      audioUrl: audioTracks[0]?.url || ""
     };
   }
 
@@ -3108,11 +3507,15 @@
     if (!payloadJson && typeof fetch === "function") {
       const headers = instagramApiHeaders();
       const mediaId = code ? shortcodeToMediaId(code) : "";
+      const timeoutSignal = () => (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+        ? AbortSignal.timeout(8000)
+        : undefined);
       if (mediaId) {
         try {
           const infoRes = await fetch(`https://www.instagram.com/api/v1/media/${mediaId}/info/`, {
             credentials: "include",
-            headers
+            headers,
+            signal: timeoutSignal()
           });
           if (infoRes.ok) {
             const infoText = await infoRes.text();
@@ -3137,7 +3540,8 @@
             method: "POST",
             credentials: "include",
             headers: postHeaders,
-            body: form.toString()
+            body: form.toString(),
+            signal: timeoutSignal()
           });
           if (gqlRes.ok) payloadJson = await gqlRes.text();
         } catch {
@@ -3300,8 +3704,12 @@
     if (!state.viewer) return;
     const { image, zoomInput, zoomLabel, scale, offsetX, offsetY } = state.viewer;
     image.style.transform = `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px)) scale(${scale})`;
-    zoomInput.value = String(Math.round(scale * 100));
-    zoomLabel.textContent = `${Math.round(scale * 100)}%`;
+    const pctNum = String(Math.round(scale * 100));
+    if (pctNum !== state.viewer.lastZoomPct) {
+      state.viewer.lastZoomPct = pctNum;
+      zoomInput.value = pctNum;
+      zoomLabel.textContent = `${pctNum}%`;
+    }
   }
 
   function setViewerScale(scale) {
@@ -3329,6 +3737,7 @@
   function closeViewer() {
     const current = state.viewer;
     if (!current) return;
+    current.cancelPan?.();
     current.overlay.remove();
     state.viewer = null;
     const prevFocus = current.previousFocus;
@@ -3428,7 +3837,9 @@
       scale: 1,
       fitScale: 1,
       offsetX: 0,
-      offsetY: 0
+      offsetY: 0,
+      lastZoomPct: "",
+      cancelPan: null
     };
     updateViewerTransform();
     enlarged.addEventListener("load", fitViewer, { once: true });
@@ -3445,9 +3856,36 @@
     let dragging = false;
     let startX = 0;
     let startY = 0;
+    let panRafId = null;
+    let pendingPanX = 0;
+    let pendingPanY = 0;
+    const schedulePanFrame = typeof window.requestAnimationFrame === "function"
+      ? window.requestAnimationFrame.bind(window)
+      : fn => window.setTimeout(fn, 16);
+    const cancelPanFrame = typeof window.cancelAnimationFrame === "function"
+      ? window.cancelAnimationFrame.bind(window)
+      : window.clearTimeout.bind(window);
+    const flushPan = () => {
+      panRafId = null;
+      if (!state.viewer) return;
+      state.viewer.offsetX = pendingPanX - startX;
+      state.viewer.offsetY = pendingPanY - startY;
+      updateViewerTransform();
+    };
+    const cancelPan = () => {
+      if (panRafId !== null) {
+        cancelPanFrame(panRafId);
+        panRafId = null;
+      }
+    };
+    state.viewer.cancelPan = cancelPan;
     const stopDrag = event => {
       if (!dragging) return;
       dragging = false;
+      if (panRafId !== null) {
+        cancelPan();
+        flushPan();
+      }
       if (event?.pointerId !== undefined) {
         try { viewport.releasePointerCapture?.(event.pointerId); } catch {}
       }
@@ -3457,17 +3895,30 @@
       dragging = true;
       startX = event.clientX - state.viewer.offsetX;
       startY = event.clientY - state.viewer.offsetY;
+      pendingPanX = event.clientX;
+      pendingPanY = event.clientY;
       try { viewport.setPointerCapture?.(event.pointerId); } catch {}
     });
     viewport.addEventListener("pointermove", event => {
       if (!dragging || !state.viewer) return;
-      state.viewer.offsetX = event.clientX - startX;
-      state.viewer.offsetY = event.clientY - startY;
-      updateViewerTransform();
+      pendingPanX = event.clientX;
+      pendingPanY = event.clientY;
+      if (panRafId === null) {
+        panRafId = schedulePanFrame(flushPan);
+      }
     });
     viewport.addEventListener("pointerup", stopDrag);
-    viewport.addEventListener("pointercancel", stopDrag);
-    viewport.addEventListener("lostpointercapture", () => { dragging = false; });
+    viewport.addEventListener("pointercancel", event => {
+      dragging = false;
+      cancelPan();
+      if (event?.pointerId !== undefined) {
+        try { viewport.releasePointerCapture?.(event.pointerId); } catch {}
+      }
+    });
+    viewport.addEventListener("lostpointercapture", () => {
+      dragging = false;
+      cancelPan();
+    });
     try { close.focus({ preventScroll: true }); } catch {
       try { close.focus(); } catch {}
     }
@@ -3832,7 +4283,7 @@
     const insideVideoControls = elementFromTarget(event.target)?.closest?.(".ignow-video-controls");
     if (insideViewer || insideMenu || insideVideoControls) return;
 
-    if (!event.ctrlKey) {
+    if (!event.ctrlKey && !event.metaKey) {
       closeMenu();
       return;
     }
@@ -3909,6 +4360,7 @@
     }
 
     const target = elementFromTarget(event.target);
+    if (noteMusicState.modal || target?.closest?.(".ignow-note-clip-modal")) return;
     if (target?.matches?.("input, textarea, [contenteditable=true]")) {
       // Arrow keys belong to the volume slider while it has keyboard focus
       // (tabIndex -1 keeps it out of Tab order; the mute button stays the
@@ -3943,12 +4395,18 @@
     if (event.key !== "Escape") return;
     const target = elementFromTarget(event.target);
     if (target?.matches?.("input, textarea, [contenteditable=true]")
-      && !target.closest?.(".ignow-video-controls")) return;
+      && !target.closest?.(".ignow-video-controls, .ignow-note-clip-modal, .ignow-media-viewer")) return;
 
     if (state.viewer) {
       event.preventDefault();
       event.stopImmediatePropagation();
       closeViewer();
+      return;
+    }
+    if (noteMusicState.modal) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      closeNoteClipModal();
       return;
     }
     if (state.menu) {
@@ -4724,7 +5182,7 @@
         linuxPerfStyleEl = document.createElement("style");
         linuxPerfStyleEl.id = "__ignow-linux-perf";
         linuxPerfStyleEl.textContent =
-          ".ignow-media-viewer { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; background: rgba(0, 0, 0, 0.9) !important; }\n" +
+          ".ignow-media-viewer, .ignow-note-clip-modal { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; background: rgba(0, 0, 0, 0.9) !important; }\n" +
           ".ignow-video-controls button, .ignow-video-controls__time { text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9) !important; }\n" +
           ".ignow-video-controls__progress, .ignow-video-controls__volume-slider, .ignow-image-download-btn { box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55) !important; }\n" +
           ".ignow-video-controls__progress::-webkit-slider-thumb, .ignow-video-controls__volume-slider::-webkit-slider-thumb { box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55) !important; }\n" +
@@ -4900,6 +5358,968 @@
       }
     }
     installSidebarBackButton(false);
+    syncNoteMusicClipButton();
+  }
+
+  const noteMusicState = {
+    tracksById: new Map(),
+    tracksByTitle: new Map(),
+    lastTrack: null,
+    activeTrackKey: "",
+    committedClip: null,
+    modal: null,
+    modalReqId: 0,
+    lastRemoveBtn: null,
+    lastRemoveParent: null,
+    lastFloating: false,
+    lastClipBtn: null,
+    lastBtnLabel: null,
+    originalFetch: typeof window.fetch === "function" ? window.fetch.bind(window) : null
+  };
+
+  function formatMmSs(ms) {
+    const totalSec = Math.max(0, Math.round(Number(ms || 0) / 1000));
+    const min = Math.floor(totalSec / 60);
+    const sec = totalSec % 60;
+    return `${min}:${String(sec).padStart(2, "0")}`;
+  }
+
+  function recordMusicTrack(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const title = String(raw.title || "").trim();
+    const audioClusterId = String(raw.audio_cluster_id || "").trim();
+    const audioAssetId = String(raw.audio_asset_id || raw.id || "").trim();
+    if (!title && !audioClusterId && !audioAssetId) return null;
+    const key = audioClusterId || audioAssetId || title.toLowerCase();
+    const existing = noteMusicState.tracksById.get(key);
+    const durationRaw = Number(raw.duration_in_ms);
+    const durationMs = Number.isFinite(durationRaw) && durationRaw > 0
+      ? Math.max(1000, durationRaw)
+      : (existing?.durationMs || 30000);
+    const highlights = Array.isArray(raw.highlight_start_times_in_ms)
+      ? raw.highlight_start_times_in_ms.map(Number).filter(n => Number.isFinite(n) && n >= 0)
+      : (existing?.highlights || []);
+    const fullCandidate = normalizeMediaUrl(
+      raw.fast_start_progressive_download_url || raw.progressive_download_url || ""
+    );
+    const previewCandidate = normalizeMediaUrl(raw.web_30s_preview_download_url || "");
+    const record = {
+      key,
+      id: String(raw.id || audioAssetId || audioClusterId || key),
+      audioClusterId: audioClusterId || existing?.audioClusterId || "",
+      audioAssetId: audioAssetId || existing?.audioAssetId || "",
+      title: title || existing?.title || "Selected Song",
+      artist: String(raw.display_artist || raw.artist_name || existing?.artist || "").trim(),
+      durationMs,
+      coverUrl: normalizeMediaUrl(raw.cover_artwork_uri || raw.cover_artwork_thumbnail_uri || "") || existing?.coverUrl || "",
+      fullUrl: /^https?:\/\//i.test(fullCandidate) ? fullCandidate : (existing?.fullUrl || ""),
+      previewUrl: /^https?:\/\//i.test(previewCandidate) ? previewCandidate : (existing?.previewUrl || ""),
+      highlights,
+      isExplicit: Boolean(raw.is_explicit ?? existing?.isExplicit)
+    };
+    if (noteMusicState.tracksById.has(key)) noteMusicState.tracksById.delete(key);
+    if (record.audioAssetId && record.audioAssetId !== key && noteMusicState.tracksById.has(record.audioAssetId)) {
+      noteMusicState.tracksById.delete(record.audioAssetId);
+    }
+    const idNeeded = record.audioAssetId && record.audioAssetId !== key ? 2 : 1;
+    while (noteMusicState.tracksById.size + idNeeded > 200) {
+      const oldest = noteMusicState.tracksById.keys().next().value;
+      if (oldest === undefined) break;
+      noteMusicState.tracksById.delete(oldest);
+    }
+    noteMusicState.tracksById.set(key, record);
+    if (record.audioAssetId && record.audioAssetId !== key) {
+      noteMusicState.tracksById.set(record.audioAssetId, record);
+    }
+    if (record.title) {
+      const tKey = record.title.toLowerCase();
+      const taKey = record.artist ? `${tKey}|${record.artist.toLowerCase()}` : "";
+      if (noteMusicState.tracksByTitle.has(tKey)) noteMusicState.tracksByTitle.delete(tKey);
+      if (taKey && noteMusicState.tracksByTitle.has(taKey)) noteMusicState.tracksByTitle.delete(taKey);
+      const titleNeeded = taKey ? 2 : 1;
+      while (noteMusicState.tracksByTitle.size + titleNeeded > 300) {
+        const oldest = noteMusicState.tracksByTitle.keys().next().value;
+        if (oldest === undefined) break;
+        noteMusicState.tracksByTitle.delete(oldest);
+      }
+      noteMusicState.tracksByTitle.set(tKey, record);
+      if (taKey) {
+        noteMusicState.tracksByTitle.set(taKey, record);
+      }
+    }
+    noteMusicState.lastTrack = record;
+    return record;
+  }
+
+  function cacheMusicTracksFromObject(root) {
+    if (!root || typeof root !== "object") return;
+    const stack = [[root, 0]];
+    const seen = new Set();
+    let visited = 0;
+    while (stack.length && visited < 4000) {
+      const [node, depth] = stack.pop();
+      if (!node || typeof node !== "object" || seen.has(node) || depth > 20) continue;
+      seen.add(node);
+      visited += 1;
+      if (!Array.isArray(node) && (node.audio_cluster_id || node.web_30s_preview_download_url || node.fast_start_progressive_download_url) && (node.title || node.duration_in_ms)) {
+        recordMusicTrack(node);
+      }
+      if (Array.isArray(node)) {
+        for (let i = node.length - 1; i >= 0; i -= 1) {
+          if (node[i] && typeof node[i] === "object") stack.push([node[i], depth + 1]);
+        }
+      } else {
+        const vals = Object.values(node);
+        for (let i = vals.length - 1; i >= 0; i -= 1) {
+          if (vals[i] && typeof vals[i] === "object") stack.push([vals[i], depth + 1]);
+        }
+      }
+    }
+  }
+
+  function cacheMusicTracksFromText(text) {
+    if (typeof text !== "string") return;
+    if (!text.includes("audio_cluster_id") && !text.includes("web_30s_preview_download_url") && !text.includes("music_asset_info")) {
+      return;
+    }
+    const cleaned = text.replace(/^\s*for\s*\(;;\);/, "");
+    const lines = cleaned.indexOf("\n") === -1 ? [cleaned] : cleaned.split("\n");
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i].trim();
+      if (!line || (line[0] !== "{" && line[0] !== "[")) continue;
+      try {
+        cacheMusicTracksFromObject(JSON.parse(line));
+      } catch {
+        // Ignore non-JSON chunks.
+      }
+    }
+  }
+
+  function mutateMusicNoteInfo(node, clip, depth = 0) {
+    if (!node || typeof node !== "object" || depth > 14) return false;
+    let changed = false;
+    if (!Array.isArray(node) && node.music_note_create_info && typeof node.music_note_create_info === "object") {
+      node.music_note_create_info.start_time = Math.round(clip.startMs);
+      node.music_note_create_info.duration = Math.round(clip.durationMs);
+      changed = true;
+    }
+    const children = Array.isArray(node) ? node : Object.values(node);
+    for (let i = 0; i < children.length; i += 1) {
+      if (children[i] && typeof children[i] === "object" && mutateMusicNoteInfo(children[i], clip, depth + 1)) {
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  function patchMusicNoteRequestBody(body) {
+    const clip = noteMusicState.committedClip;
+    if (!clip || !body) return { body, patched: false };
+    try {
+      if ((ArrayBuffer.isView(body) || body instanceof ArrayBuffer || Object.prototype.toString.call(body) === "[object ArrayBuffer]")
+        && typeof TextDecoder === "function"
+        && typeof TextEncoder === "function") {
+        const decoded = new TextDecoder().decode(body);
+        if (!decoded.includes("music_note_create_info")) return { body, patched: false };
+        const strRes = patchMusicNoteRequestBody(decoded);
+        if (!strRes.patched) return { body, patched: false };
+        const encoded = new TextEncoder().encode(strRes.body);
+        const isArrBuf = body instanceof ArrayBuffer || Object.prototype.toString.call(body) === "[object ArrayBuffer]";
+        return { body: isArrBuf ? encoded.buffer : encoded, patched: true };
+      }
+      if (typeof body === "string") {
+        if (!body.includes("music_note_create_info")) return { body, patched: false };
+        const trimmed = body.trim();
+        if (trimmed.startsWith("{")) {
+          const parsed = JSON.parse(trimmed);
+          let changed = mutateMusicNoteInfo(parsed, clip);
+          if (!changed && typeof parsed.variables === "string" && parsed.variables.includes("music_note_create_info")) {
+            try {
+              const innerVars = JSON.parse(parsed.variables);
+              if (mutateMusicNoteInfo(innerVars, clip)) {
+                parsed.variables = JSON.stringify(innerVars);
+                changed = true;
+              }
+            } catch {}
+          }
+          if (changed) {
+            return { body: JSON.stringify(parsed), patched: true };
+          }
+          return { body, patched: false };
+        }
+        const params = new URLSearchParams(body);
+        const varsRaw = params.get("variables");
+        if (varsRaw) {
+          const parsedVars = JSON.parse(varsRaw);
+          if (mutateMusicNoteInfo(parsedVars, clip)) {
+            params.set("variables", JSON.stringify(parsedVars));
+            return { body: params.toString(), patched: true };
+          }
+        }
+      } else if (typeof URLSearchParams === "function" && body instanceof URLSearchParams) {
+        const varsRaw = body.get("variables");
+        if (varsRaw && varsRaw.includes("music_note_create_info")) {
+          const parsedVars = JSON.parse(varsRaw);
+          if (mutateMusicNoteInfo(parsedVars, clip)) {
+            const next = new URLSearchParams(body);
+            next.set("variables", JSON.stringify(parsedVars));
+            return { body: next, patched: true };
+          }
+        }
+      } else if (typeof FormData === "function" && body instanceof FormData) {
+        const varsRaw = body.get("variables");
+        if (typeof varsRaw === "string" && varsRaw.includes("music_note_create_info")) {
+          const parsedVars = JSON.parse(varsRaw);
+          if (mutateMusicNoteInfo(parsedVars, clip)) {
+            const next = new FormData();
+            const patchedVarsJson = JSON.stringify(parsedVars);
+            let replaced = false;
+            body.forEach((value, key) => {
+              if (key === "variables") {
+                if (!replaced) {
+                  next.append("variables", patchedVarsJson);
+                  replaced = true;
+                }
+              } else {
+                next.append(key, value);
+              }
+            });
+            if (!replaced) next.set("variables", patchedVarsJson);
+            return { body: next, patched: true };
+          }
+        }
+      }
+    } catch {
+      // Never break outgoing requests on malformed payloads.
+    }
+    return { body, patched: false };
+  }
+
+  function resolveAttachedNoteTrack(removeBtn) {
+    let fallbackTexts = [];
+    let scope = removeBtn?.parentElement || null;
+    for (let depth = 0; depth < 5 && scope; depth += 1, scope = scope.parentElement) {
+      const texts = Array.from(scope.querySelectorAll?.("span, div, p") || [])
+        .filter(el => !el.closest?.(".ignow-note-clip-btn") && el.childElementCount === 0)
+        .map(el => el.textContent?.trim() || "")
+        .filter(Boolean);
+      if (texts.length && !fallbackTexts.length) fallbackTexts = texts;
+      for (let i = 0; i < texts.length; i += 1) {
+        const titleKey = texts[i].toLowerCase();
+        for (let j = i + 1; j < texts.length && j <= i + 3; j += 1) {
+          const exactPair = noteMusicState.tracksByTitle.get(`${titleKey}|${texts[j].toLowerCase()}`);
+          if (exactPair) return exactPair;
+        }
+      }
+      for (let i = 0; i < texts.length; i += 1) {
+        const hit = noteMusicState.tracksByTitle.get(texts[i].toLowerCase());
+        if (hit) return hit;
+      }
+    }
+    if (noteMusicState.lastTrack) return noteMusicState.lastTrack;
+    return {
+      key: fallbackTexts[0] || "note-track",
+      id: "",
+      audioClusterId: "",
+      audioAssetId: "",
+      title: fallbackTexts[0] || "Selected Song",
+      artist: fallbackTexts[1] || "",
+      durationMs: 30000,
+      coverUrl: "",
+      fullUrl: "",
+      previewUrl: "",
+      highlights: [],
+      isExplicit: false
+    };
+  }
+
+  async function ensureFullTrackMetadata(track) {
+    if (track.fullUrl || (!track.audioClusterId && !track.audioAssetId)) return track;
+    const doFetch = noteMusicState.originalFetch || window.fetch;
+    if (typeof doFetch !== "function") return track;
+    try {
+      const body = new URLSearchParams({
+        audio_cluster_id: track.audioClusterId || track.audioAssetId,
+        original_sound_audio_asset_id: track.audioAssetId || track.audioClusterId
+      }).toString();
+      const res = await doFetch("https://www.instagram.com/api/v1/clips/music/", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          ...instagramApiHeaders(),
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body
+      });
+      if (!res?.ok) return track;
+      const json = typeof res.json === "function" ? await res.json() : JSON.parse(await res.text());
+      const asset = json?.metadata?.music_info?.music_asset_info;
+      if (asset) return recordMusicTrack({ ...track, ...asset }) || track;
+    } catch {
+      // Keep preview fallback when clips/music is unavailable.
+    }
+    return track;
+  }
+
+  function deterministicWaveformPeaks(seedStr, count = 60) {
+    let h = 2166136261;
+    for (let i = 0; i < seedStr.length; i += 1) {
+      h ^= seedStr.charCodeAt(i);
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+    const bars = [];
+    for (let i = 0; i < count; i += 1) {
+      h = (Math.imul(h ^ (i + 17), 1664525) + 1013904223) >>> 0;
+      bars.push(0.24 + ((h % 76) / 100));
+    }
+    return bars;
+  }
+
+  async function decodeWaveformPeaksIfAllowed(url, count = 60, signal = null) {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const doFetch = noteMusicState.originalFetch || window.fetch;
+    if (!url || !AudioCtx || typeof doFetch !== "function" || signal?.aborted) return null;
+    try {
+      const fetchOpts = signal ? { mode: "cors", signal } : { mode: "cors" };
+      const res = await doFetch(url, fetchOpts);
+      if (signal?.aborted || !res?.ok || typeof res.arrayBuffer !== "function") return null;
+      const buf = await res.arrayBuffer();
+      if (signal?.aborted) return null;
+      const ctx = new AudioCtx();
+      try {
+        const decoded = await ctx.decodeAudioData(buf);
+        const chan = decoded.getChannelData(0);
+        const step = Math.max(1, Math.floor(chan.length / count));
+        const peaks = [];
+        for (let i = 0; i < count; i += 1) {
+          let peak = 0;
+          const start = i * step;
+          const end = Math.min(chan.length, start + step);
+          for (let j = start; j < end; j += Math.max(1, Math.floor(step / 24))) {
+            const v = Math.abs(chan[j]);
+            if (v > peak) peak = v;
+          }
+          peaks.push(Math.max(0.18, Math.min(1, peak)));
+        }
+        return peaks;
+      } finally {
+        ctx.close?.().catch?.(() => {});
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  function closeNoteClipModal() {
+    noteMusicState.modalReqId += 1;
+    const modalState = noteMusicState.modal;
+    if (!modalState) return;
+    noteMusicState.modal = null;
+    modalState.cleanup?.();
+    modalState.overlay.remove();
+    if (modalState.previousFocus?.isConnected && typeof modalState.previousFocus.focus === "function") {
+      try { modalState.previousFocus.focus({ preventScroll: true }); } catch {
+        try { modalState.previousFocus.focus(); } catch {}
+      }
+    }
+  }
+
+  function updateNoteClipButtonLabel() {
+    const btn = noteMusicState.lastClipBtn?.isConnected
+      ? noteMusicState.lastClipBtn
+      : document.querySelector(".ignow-note-clip-btn");
+    if (!btn) return;
+    noteMusicState.lastClipBtn = btn;
+    const clip = noteMusicState.committedClip;
+    const label = clip
+      ? `Clip ${formatMmSs(clip.startMs)}\u2013${formatMmSs(clip.startMs + clip.durationMs)}`
+      : "Select clip";
+    if (noteMusicState.lastBtnLabel !== label) {
+      noteMusicState.lastBtnLabel = label;
+      btn.textContent = label;
+    }
+  }
+
+  async function openNoteClipModal(initialTrack, triggerBtn) {
+    closeNoteClipModal();
+    const reqId = (noteMusicState.modalReqId += 1);
+    const previousFocus = triggerBtn || document.activeElement;
+    let track = await ensureFullTrackMetadata(initialTrack);
+    if (noteMusicState.modalReqId !== reqId) return;
+    if (triggerBtn && !triggerBtn.isConnected) return;
+    const totalMs = Math.max(1000, track.durationMs || 30000);
+    const committed = noteMusicState.committedClip;
+    let clipDurationMs = Math.min(totalMs, Math.max(Math.min(5000, totalMs), committed?.durationMs || 30000));
+    let startMs = Math.max(0, Math.min(totalMs - clipDurationMs, committed?.startMs || 0));
+
+    const overlay = document.createElement("div");
+    overlay.className = "ignow-note-clip-modal";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-labelledby", "ignow-clip-title");
+
+    const card = document.createElement("section");
+    card.className = "ignow-note-clip-card";
+
+    const header = document.createElement("div");
+    header.className = "ignow-note-clip-header";
+    const cover = document.createElement("img");
+    cover.className = "ignow-note-clip-cover";
+    cover.alt = track.title;
+    if (track.coverUrl) cover.src = track.coverUrl;
+    const meta = document.createElement("div");
+    meta.className = "ignow-note-clip-meta";
+    const titleRow = document.createElement("div");
+    titleRow.className = "ignow-note-clip-title-row";
+    const titleEl = document.createElement("h2");
+    titleEl.id = "ignow-clip-title";
+    titleEl.className = "ignow-note-clip-title";
+    titleEl.textContent = track.title;
+    titleRow.appendChild(titleEl);
+    if (track.isExplicit) {
+      const exp = document.createElement("span");
+      exp.className = "ignow-note-clip-explicit";
+      exp.textContent = "E";
+      exp.setAttribute("aria-label", "Explicit");
+      titleRow.appendChild(exp);
+    }
+    const artistEl = document.createElement("div");
+    artistEl.className = "ignow-note-clip-artist";
+    artistEl.textContent = track.artist || "Instagram Audio";
+    meta.append(titleRow, artistEl);
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "ignow-note-clip-close";
+    closeBtn.textContent = "\u00D7";
+    closeBtn.setAttribute("aria-label", "Close clip selector");
+    closeBtn.addEventListener("click", closeNoteClipModal);
+    header.append(cover, meta, closeBtn);
+
+    const audio = document.createElement("audio");
+    audio.className = "ignow-note-clip-audio";
+    audio.preload = "metadata";
+    const audioUrl = track.fullUrl || track.previewUrl;
+    if (audioUrl) audio.src = audioUrl;
+
+    const controls = document.createElement("div");
+    controls.className = "ignow-note-clip-controls";
+    const playBtn = document.createElement("button");
+    playBtn.type = "button";
+    playBtn.className = "ignow-note-clip-play";
+    playBtn.textContent = "\u25B6";
+    playBtn.setAttribute("aria-label", "Play clip preview");
+    const progTrack = document.createElement("div");
+    progTrack.className = "ignow-note-clip-progress";
+    const progFill = document.createElement("div");
+    progFill.className = "ignow-note-clip-progress-fill";
+    progTrack.appendChild(progFill);
+    const durBadge = document.createElement("span");
+    durBadge.className = "ignow-note-clip-dur-badge";
+    controls.append(playBtn, progTrack, durBadge);
+
+    const waveform = document.createElement("div");
+    waveform.className = "ignow-note-clip-waveform";
+    waveform.tabIndex = 0;
+    waveform.setAttribute("role", "slider");
+    waveform.setAttribute("aria-label", "Music clip start position");
+    waveform.setAttribute("aria-valuemin", "0");
+    const winOverlay = document.createElement("div");
+    winOverlay.className = "ignow-note-clip-window";
+    const barsWrap = document.createElement("div");
+    barsWrap.className = "ignow-note-clip-bars";
+    const BAR_COUNT = 60;
+    const barEls = [];
+    const applyPeaks = peaks => {
+      for (let i = 0; i < barEls.length; i += 1) {
+        barEls[i].style.height = `${Math.round((peaks[i] ?? 0.5) * 100)}%`;
+      }
+    };
+    for (let i = 0; i < BAR_COUNT; i += 1) {
+      const b = document.createElement("span");
+      b.className = "ignow-note-clip-bar";
+      barEls.push(b);
+      barsWrap.appendChild(b);
+    }
+    applyPeaks(deterministicWaveformPeaks(`${track.title}|${track.artist}|${track.id}`, BAR_COUNT));
+    waveform.append(winOverlay, barsWrap);
+
+    const timesRow = document.createElement("div");
+    timesRow.className = "ignow-note-clip-times";
+    const rangeLabel = document.createElement("span");
+    const totalLabel = document.createElement("span");
+    totalLabel.textContent = `Track ${formatMmSs(totalMs)}`;
+    timesRow.append(rangeLabel, totalLabel);
+
+    const durRow = document.createElement("div");
+    durRow.className = "ignow-note-clip-dur-row";
+    const durBtns = [5, 10, 15, 30]
+      .filter(sec => sec * 1000 <= totalMs || sec === 5)
+      .map(sec => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "ignow-note-clip-pill";
+        b.dataset.clipDuration = String(sec);
+        b.textContent = `${sec}s`;
+        b.addEventListener("click", () => setClipDuration(sec * 1000));
+        return b;
+      });
+    const maxSec = Math.max(5, Math.min(30, Math.floor(totalMs / 1000)));
+    const minSec = Math.min(5, maxSec);
+    const durSlider = document.createElement("input");
+    durSlider.type = "range";
+    durSlider.className = "ignow-note-clip-range";
+    durSlider.min = String(minSec);
+    durSlider.max = String(maxSec);
+    durSlider.step = "1";
+    durSlider.setAttribute("aria-label", "Clip duration seconds");
+    durSlider.addEventListener("input", () => setClipDuration(Number(durSlider.value) * 1000));
+    durRow.append(...durBtns, durSlider);
+
+    const chipsRow = document.createElement("div");
+    chipsRow.className = "ignow-note-clip-chips";
+    if (track.highlights?.length) {
+      track.highlights.slice(0, 4).forEach(ms => {
+        const clamped = Math.max(0, Math.min(totalMs - clipDurationMs, ms));
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "ignow-note-clip-pill";
+        chip.dataset.highlightMs = String(ms);
+        chip.textContent = `\u2605 ${formatMmSs(clamped)}`;
+        chip.addEventListener("click", () => {
+          setClipStart(ms, true);
+        });
+        chipsRow.appendChild(chip);
+      });
+    }
+
+    const footer = document.createElement("div");
+    footer.className = "ignow-note-clip-footer";
+    const resetBtn = document.createElement("button");
+    resetBtn.type = "button";
+    resetBtn.className = "ignow-note-clip-pill";
+    resetBtn.textContent = "Reset";
+    resetBtn.addEventListener("click", () => {
+      clipDurationMs = Math.min(totalMs, 30000);
+      setClipStart(0, false);
+    });
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "ignow-note-clip-pill";
+    cancelBtn.textContent = "Cancel";
+    cancelBtn.addEventListener("click", closeNoteClipModal);
+    const applyBtn = document.createElement("button");
+    applyBtn.type = "button";
+    applyBtn.className = "ignow-note-clip-apply";
+    applyBtn.textContent = "Apply clip";
+    applyBtn.addEventListener("click", () => {
+      noteMusicState.committedClip = {
+        trackKey: track.key,
+        startMs: Math.round(startMs),
+        durationMs: Math.round(clipDurationMs)
+      };
+      updateNoteClipButtonLabel();
+      closeNoteClipModal();
+    });
+    footer.append(resetBtn, cancelBtn, applyBtn);
+
+    card.append(header, controls, waveform, timesRow, durRow);
+    if (chipsRow.childElementCount) card.appendChild(chipsRow);
+    card.append(footer, audio);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+
+    const waveformAc = typeof AbortController === "function" ? new AbortController() : null;
+    let pendingSeekSec = null;
+    let previewWindowNoticeShown = false;
+    const isPreviewClipOutOfBounds = () => Number.isFinite(audio.duration)
+      && audio.duration > 0
+      && (startMs / 1000) >= audio.duration - 0.25;
+    const maybeNotifyBoundedPreview = () => {
+      if (previewWindowNoticeShown || noteMusicState.modal?.overlay !== overlay) return;
+      previewWindowNoticeShown = true;
+      showToast("Full track audio is unavailable; playing preview from start (selected clip time still applies).");
+    };
+    const barActiveState = new Uint8Array(BAR_COUNT).fill(255);
+    const barPlayedState = new Uint8Array(BAR_COUNT).fill(255);
+    let lastWinTransform = "";
+    let lastProgTransform = "";
+    let lastSecDur = -1;
+    let lastRangeText = "";
+    let lastValuemax = "";
+    let lastValuenow = "";
+    let lastValuetext = "";
+    let lastPausedState = null;
+
+    const renderState = () => {
+      const maxStart = Math.max(0, totalMs - clipDurationMs);
+      startMs = Math.max(0, Math.min(maxStart, startMs));
+      const endMs = startMs + clipDurationMs;
+      const leftPct = (startMs / totalMs) * 100;
+      const widthFrac = Math.max(0.04, clipDurationMs / totalMs);
+      const winTransform = `translateX(${leftPct.toFixed(2)}%) scaleX(${widthFrac.toFixed(4)})`;
+      if (winTransform !== lastWinTransform) {
+        lastWinTransform = winTransform;
+        winOverlay.style.transform = winTransform;
+      }
+
+      const boundedPreview = isPreviewClipOutOfBounds();
+      const curMs = Number.isFinite(audio.currentTime) ? audio.currentTime * 1000 : startMs;
+      const previewOffsetMs = boundedPreview ? curMs : (curMs - startMs);
+      const rel = clipDurationMs > 0 ? Math.max(0, Math.min(1, previewOffsetMs / clipDurationMs)) : 0;
+      const fillFrac = audio.paused ? 0 : rel;
+      const progTransform = `scaleX(${fillFrac.toFixed(4)})`;
+      if (progTransform !== lastProgTransform) {
+        lastProgTransform = progTransform;
+        progFill.style.transform = progTransform;
+      }
+
+      const secDur = Math.round(clipDurationMs / 1000);
+      if (secDur !== lastSecDur) {
+        lastSecDur = secDur;
+        durBadge.textContent = `${secDur}s`;
+        durSlider.value = String(secDur);
+        durBtns.forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.clipDuration) === secDur)));
+      }
+      const rangeText = `${formatMmSs(startMs)} \u2013 ${formatMmSs(endMs)}`;
+      if (rangeText !== lastRangeText) {
+        lastRangeText = rangeText;
+        rangeLabel.textContent = rangeText;
+      }
+
+      const maxAttr = String(Math.round(maxStart / 1000));
+      const nowAttr = String(Math.round(startMs / 1000));
+      const textAttr = `${formatMmSs(startMs)} to ${formatMmSs(endMs)}`;
+      if (maxAttr !== lastValuemax) {
+        lastValuemax = maxAttr;
+        waveform.setAttribute("aria-valuemax", maxAttr);
+      }
+      if (nowAttr !== lastValuenow) {
+        lastValuenow = nowAttr;
+        waveform.setAttribute("aria-valuenow", nowAttr);
+      }
+      if (textAttr !== lastValuetext) {
+        lastValuetext = textAttr;
+        waveform.setAttribute("aria-valuetext", textAttr);
+      }
+
+      const playCutoff = audio.paused ? startMs : (boundedPreview ? startMs + curMs : curMs);
+      for (let i = 0; i < BAR_COUNT; i += 1) {
+        const barStart = (i / BAR_COUNT) * totalMs;
+        const barEnd = ((i + 1) / BAR_COUNT) * totalMs;
+        const active = barEnd > startMs && barStart < endMs ? 1 : 0;
+        const played = active && !audio.paused && barStart <= playCutoff ? 1 : 0;
+        if (barActiveState[i] !== active) {
+          barActiveState[i] = active;
+          barEls[i].setAttribute("data-active", active ? "1" : "0");
+        }
+        if (barPlayedState[i] !== played) {
+          barPlayedState[i] = played;
+          barEls[i].setAttribute("data-played", played ? "1" : "0");
+        }
+      }
+      const isPaused = Boolean(audio.paused);
+      if (isPaused !== lastPausedState) {
+        lastPausedState = isPaused;
+        playBtn.textContent = isPaused ? "\u25B6" : "\u25A0";
+        playBtn.setAttribute("aria-label", isPaused ? "Play clip preview" : "Stop clip preview");
+      }
+    };
+
+    const seekPreviewToStart = (notifyIfBounded = false) => {
+      if (!audioUrl) return;
+      const wantedSec = startMs / 1000;
+      if (Number(audio.readyState) < 1) {
+        pendingSeekSec = wantedSec;
+        return;
+      }
+      pendingSeekSec = null;
+      const bounded = isPreviewClipOutOfBounds();
+      if (bounded && notifyIfBounded) maybeNotifyBoundedPreview();
+      try { audio.currentTime = bounded ? 0 : wantedSec; } catch {}
+    };
+
+    let lastDragAudioSeekAt = 0;
+    let deferredDragAudioSeek = false;
+    const setClipStart = (ms, seekAudio = false, fromDrag = false) => {
+      startMs = Math.max(0, Math.min(Math.max(0, totalMs - clipDurationMs), Math.round(ms)));
+      if (seekAudio && !audio.paused) {
+        if (fromDrag) {
+          const now = Date.now();
+          if (!lastDragAudioSeekAt || now - lastDragAudioSeekAt >= 60) {
+            lastDragAudioSeekAt = now;
+            deferredDragAudioSeek = false;
+            seekPreviewToStart();
+          } else {
+            deferredDragAudioSeek = true;
+          }
+        } else {
+          seekPreviewToStart();
+        }
+      }
+      renderState();
+    };
+
+    function setClipDuration(ms) {
+      const clampedMin = Math.min(5000, totalMs);
+      clipDurationMs = Math.max(clampedMin, Math.min(Math.min(30000, totalMs), Math.round(ms)));
+      startMs = Math.max(0, Math.min(totalMs - clipDurationMs, startMs));
+      renderState();
+    }
+
+    let previewErrorShown = false;
+    const reportPreviewUnavailable = () => {
+      if (noteMusicState.modal?.overlay !== overlay) return;
+      renderState();
+      if (!previewErrorShown) {
+        previewErrorShown = true;
+        showToast("Preview audio is unavailable for this track.");
+      }
+    };
+
+    playBtn.addEventListener("click", () => {
+      if (!audioUrl) {
+        showToast("Preview audio is unavailable for this track.");
+        return;
+      }
+      if (!audio.paused) {
+        audio.pause();
+        renderState();
+        return;
+      }
+      previewErrorShown = false;
+      seekPreviewToStart(true);
+      const playAttempt = audio.play();
+      if (playAttempt && typeof playAttempt.then === "function") {
+        playAttempt.then(renderState).catch(err => {
+          if (err?.name === "AbortError") return;
+          reportPreviewUnavailable();
+        });
+      } else {
+        renderState();
+      }
+    });
+
+    audio.addEventListener("loadedmetadata", () => {
+      if (pendingSeekSec !== null) {
+        const wanted = pendingSeekSec;
+        pendingSeekSec = null;
+        const bounded = Number.isFinite(audio.duration) && audio.duration > 0 && wanted >= audio.duration - 0.25;
+        if (bounded && !audio.paused) maybeNotifyBoundedPreview();
+        try { audio.currentTime = bounded ? 0 : wanted; } catch {}
+        renderState();
+      }
+    });
+    audio.addEventListener("timeupdate", () => {
+      const loopLimitMs = isPreviewClipOutOfBounds() ? clipDurationMs : (startMs + clipDurationMs);
+      if (!audio.paused && audio.currentTime * 1000 >= loopLimitMs) {
+        seekPreviewToStart(false);
+      }
+      renderState();
+    });
+    audio.addEventListener("ended", () => {
+      try { audio.pause(); } catch {}
+      seekPreviewToStart();
+      renderState();
+    });
+    audio.addEventListener("error", () => {
+      try { audio.pause(); } catch {}
+      reportPreviewUnavailable();
+    });
+    audio.addEventListener("pause", renderState);
+    audio.addEventListener("play", renderState);
+
+    let scrubbing = false;
+    let scrubRect = null;
+    let scrubRafId = null;
+    let latestScrubX = 0;
+    const scheduleScrubFrame = typeof window.requestAnimationFrame === "function"
+      ? window.requestAnimationFrame.bind(window)
+      : fn => window.setTimeout(fn, 16);
+    const cancelScrubFrame = typeof window.cancelAnimationFrame === "function"
+      ? window.cancelAnimationFrame.bind(window)
+      : window.clearTimeout.bind(window);
+    const invalidateScrubRect = () => { scrubRect = null; };
+    const scrubFromClientX = (clientX, fromDrag = false) => {
+      const rect = scrubRect && scrubRect.width ? scrubRect : waveform.getBoundingClientRect();
+      scrubRect = rect;
+      if (!rect.width) return;
+      const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+      const centerMs = ratio * totalMs;
+      setClipStart(centerMs - clipDurationMs / 2, true, fromDrag);
+    };
+    const flushScrubMove = () => {
+      scrubRafId = null;
+      if (!scrubbing) return;
+      scrubFromClientX(latestScrubX, true);
+    };
+    const cancelScrubRaf = () => {
+      if (scrubRafId !== null) {
+        cancelScrubFrame(scrubRafId);
+        scrubRafId = null;
+      }
+    };
+    const stopScrub = event => {
+      if (!scrubbing) return;
+      if (scrubRafId !== null) {
+        cancelScrubRaf();
+        scrubFromClientX(latestScrubX, false);
+      } else if (deferredDragAudioSeek && !audio.paused) {
+        seekPreviewToStart();
+      }
+      deferredDragAudioSeek = false;
+      scrubbing = false;
+      scrubRect = null;
+      if (event?.pointerId !== undefined) {
+        try { waveform.releasePointerCapture?.(event.pointerId); } catch {}
+      }
+    };
+    waveform.addEventListener("pointerdown", event => {
+      if (event.button !== 0) return;
+      scrubbing = true;
+      lastDragAudioSeekAt = 0;
+      deferredDragAudioSeek = false;
+      scrubRect = waveform.getBoundingClientRect();
+      latestScrubX = event.clientX;
+      try { waveform.setPointerCapture?.(event.pointerId); } catch {}
+      scrubFromClientX(event.clientX, false);
+    });
+    waveform.addEventListener("pointermove", event => {
+      if (!scrubbing) return;
+      latestScrubX = event.clientX;
+      if (scrubRafId === null) {
+        scrubRafId = scheduleScrubFrame(flushScrubMove);
+      }
+    });
+    waveform.addEventListener("pointerup", stopScrub);
+    waveform.addEventListener("pointercancel", () => {
+      scrubbing = false;
+      deferredDragAudioSeek = false;
+      scrubRect = null;
+      cancelScrubRaf();
+    });
+    waveform.addEventListener("lostpointercapture", () => {
+      scrubbing = false;
+      deferredDragAudioSeek = false;
+      scrubRect = null;
+      cancelScrubRaf();
+    });
+    window.addEventListener("resize", invalidateScrubRect);
+    window.addEventListener("blur", stopScrub);
+
+    waveform.addEventListener("keydown", event => {
+      const step = event.shiftKey ? 5000 : 1000;
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        setClipStart(startMs - step, true);
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        setClipStart(startMs + step, true);
+      } else if (event.key === "Home") {
+        event.preventDefault();
+        setClipStart(0, true);
+      } else if (event.key === "End") {
+        event.preventDefault();
+        setClipStart(totalMs - clipDurationMs, true);
+      }
+    });
+
+    overlay.addEventListener("click", event => {
+      if (event.target === overlay) closeNoteClipModal();
+    });
+
+    overlay.addEventListener("keydown", event => {
+      if (event.key !== "Tab") return;
+      const focusable = Array.from(
+        card.querySelectorAll("button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex='-1'])")
+      ).filter(el => el.offsetParent !== null || el === document.activeElement);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
+
+    noteMusicState.modal = {
+      overlay,
+      previousFocus,
+      cleanup: () => {
+        waveformAc?.abort();
+        cancelScrubRaf();
+        pendingSeekSec = null;
+        scrubRect = null;
+        window.removeEventListener("resize", invalidateScrubRect);
+        window.removeEventListener("blur", stopScrub);
+        try {
+          audio.pause();
+          audio.removeAttribute("src");
+          audio.load();
+        } catch {}
+      }
+    };
+    renderState();
+    try { waveform.focus({ preventScroll: true }); } catch {
+      try { waveform.focus(); } catch {}
+    }
+    decodeWaveformPeaksIfAllowed(audioUrl, BAR_COUNT, waveformAc?.signal || null).then(peaks => {
+      if (peaks && noteMusicState.modal?.overlay === overlay) applyPeaks(peaks);
+    });
+  }
+
+  function syncNoteMusicClipButton() {
+    if (!String(window.location?.pathname || "").startsWith("/direct")) return;
+    let removeBtn = noteMusicState.lastRemoveBtn;
+    if (!removeBtn || !removeBtn.isConnected) {
+      removeBtn = document.querySelector("button[aria-label='Remove song'], [role='button'][aria-label='Remove song']");
+      noteMusicState.lastRemoveBtn = removeBtn;
+      noteMusicState.lastRemoveParent = null;
+    }
+    if (!removeBtn) {
+      if (noteMusicState.lastClipBtn?.isConnected || document.querySelector(".ignow-note-clip-btn")) {
+        document.querySelectorAll(".ignow-note-clip-btn").forEach(el => el.remove());
+      }
+      if (noteMusicState.modal) closeNoteClipModal();
+      noteMusicState.lastClipBtn = null;
+      noteMusicState.lastBtnLabel = null;
+      noteMusicState.lastRemoveParent = null;
+      noteMusicState.committedClip = null;
+      noteMusicState.activeTrackKey = "";
+      return;
+    }
+    let btn = noteMusicState.lastClipBtn;
+    if (!btn || !btn.isConnected || btn.parentElement !== removeBtn.parentElement) {
+      const track = resolveAttachedNoteTrack(removeBtn);
+      if (track.key !== noteMusicState.activeTrackKey) {
+        noteMusicState.activeTrackKey = track.key;
+        noteMusicState.committedClip = null;
+      }
+      document.querySelectorAll(".ignow-note-clip-btn").forEach(el => el.remove());
+      btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ignow-note-clip-btn";
+      btn.addEventListener("click", event => {
+        event.preventDefault();
+        event.stopPropagation();
+        openNoteClipModal(resolveAttachedNoteTrack(removeBtn), btn);
+      });
+      removeBtn.parentElement?.insertBefore(btn, removeBtn);
+      noteMusicState.lastClipBtn = btn;
+      noteMusicState.lastBtnLabel = null;
+    }
+    const parentEl = removeBtn.parentElement;
+    if (parentEl && parentEl !== noteMusicState.lastRemoveParent) {
+      noteMusicState.lastRemoveParent = parentEl;
+      const parentPos = typeof window.getComputedStyle === "function"
+        ? window.getComputedStyle(parentEl).position
+        : "";
+      noteMusicState.lastFloating = parentPos === "absolute" || parentPos === "fixed";
+    }
+    btn.classList.toggle("ignow-note-clip-btn--floating", Boolean(noteMusicState.lastFloating));
+    updateNoteClipButtonLabel();
   }
 
   function installNetworkMediaObserver() {
@@ -4907,16 +6327,54 @@
       && !/\/(?:logging_client_events|bulk-route-definitions|ads\/|direct_v2\/inbox|news\/inbox|presence|qp\/batch|fxcal|bloks|web_info)/i.test(url);
     if (typeof window.fetch === "function") {
       const originalFetch = window.fetch;
-      window.fetch = function (...args) {
-        const pending = originalFetch.apply(this, args);
+      noteMusicState.originalFetch = originalFetch.bind(window);
+      window.fetch = function (input, init, ...rest) {
+        let nextInit = init;
+        let patchedSend = false;
+        let pending;
+        if (init && typeof init === "object" && "body" in init) {
+          const res = patchMusicNoteRequestBody(init.body);
+          if (res.patched) {
+            patchedSend = true;
+            nextInit = { ...init, body: res.body };
+          }
+          pending = originalFetch.call(this, input, nextInit, ...rest);
+          if (patchedSend) {
+            noteMusicState.committedClip = null;
+            updateNoteClipButtonLabel();
+          }
+        } else if (
+          noteMusicState.committedClip
+          && typeof Request === "function"
+          && input instanceof Request
+          && input.method !== "GET"
+          && input.method !== "HEAD"
+        ) {
+          const self = this;
+          pending = input.clone().text().then(rawText => {
+            let nextInput = input;
+            const res = patchMusicNoteRequestBody(rawText);
+            if (res.patched) {
+              noteMusicState.committedClip = null;
+              updateNoteClipButtonLabel();
+              nextInput = new Request(input, { body: res.body });
+            }
+            return originalFetch.call(self, nextInput, nextInit, ...rest);
+          }).catch(() => originalFetch.call(self, input, nextInit, ...rest));
+        } else {
+          pending = originalFetch.call(this, input, nextInit, ...rest);
+        }
         Promise.resolve(pending).then(response => {
-          const url = String(response?.url || "");
+          const url = String(response?.url || (typeof input === "string" ? input : input?.url) || "");
           if (!shouldInspectUrl(url)) return;
           const contentType = String(response.headers?.get?.("content-type") || "");
           if (contentType && !/json|text|javascript/i.test(contentType)) return;
           if (Number(response.headers?.get?.("content-length")) > 2 * 1024 * 1024) return;
           response.clone?.().text?.().then(text => {
-            if (text && text.length <= 2 * 1024 * 1024) queueNetworkPayload("text", text);
+            if (text && text.length <= 2 * 1024 * 1024) {
+              queueNetworkPayload("text", text);
+              cacheMusicTracksFromText(text);
+            }
           }).catch(() => {});
         }).catch(() => {});
         return pending;
@@ -4924,6 +6382,7 @@
     }
     if (typeof window.XMLHttpRequest === "function") {
       const originalOpen = window.XMLHttpRequest.prototype.open;
+      const originalSend = window.XMLHttpRequest.prototype.send;
       const xhrUrls = new WeakMap();
       window.XMLHttpRequest.prototype.open = function (method, url) {
         if (!xhrUrls.has(this)) {
@@ -4932,9 +6391,13 @@
             if (!shouldInspectUrl(reqUrl)) return;
             try {
               if (this.responseType === "json") {
-                if (this.response && typeof this.response === "object") queueNetworkPayload("obj", this.response);
+                if (this.response && typeof this.response === "object") {
+                  queueNetworkPayload("obj", this.response);
+                  cacheMusicTracksFromObject(this.response);
+                }
               } else {
                 queueNetworkPayload("text", this.responseText);
+                cacheMusicTracksFromText(this.responseText);
               }
             } catch {
               // Ignore non-JSON responses.
@@ -4944,6 +6407,16 @@
         xhrUrls.set(this, url);
         return originalOpen.apply(this, arguments);
       };
+      if (typeof originalSend === "function") {
+        window.XMLHttpRequest.prototype.send = function (body, ...rest) {
+          const res = patchMusicNoteRequestBody(body);
+          if (res.patched) {
+            noteMusicState.committedClip = null;
+            updateNoteClipButtonLabel();
+          }
+          return originalSend.call(this, res.body, ...rest);
+        };
+      }
     }
   }
 
@@ -5056,13 +6529,15 @@
 
     const isOwnNode = node => node instanceof Element
       && Boolean(
-        node.closest?.(".ignow-sidebar-back, .ignow-sidebar-forward, .ignow-sidebar-downloader, .ignow-sidebar-floating-nav, .ignow-video-controls, .ignow-image-download-btn, .ignow-media-menu, .ignow-toast, .ignow-media-viewer")
+        node.closest?.(".ignow-sidebar-back, .ignow-sidebar-forward, .ignow-sidebar-downloader, .ignow-sidebar-floating-nav, .ignow-video-controls, .ignow-image-download-btn, .ignow-media-menu, .ignow-toast, .ignow-media-viewer, .ignow-note-clip-btn, .ignow-note-clip-modal")
       );
     const hasRelevantSubtree = node => node instanceof Element
       && !isOwnNode(node)
       && (mountedMoreInfo === null
         || node.matches?.("video, img, article, nav, [role='dialog'], [role='navigation'], [data-ignow-sidebar]")
-        || Boolean(node.querySelector?.("video, img, [role='dialog'], [role='navigation'], nav")));
+        || Boolean(node.querySelector?.("video, img, [role='dialog'], [role='navigation'], nav"))
+        || (String(window.location?.pathname || "").startsWith("/direct")
+          && (node.matches?.("[aria-label='Remove song']") || Boolean(node.querySelector?.("[aria-label='Remove song']")))));
 
     new MutationObserver(mutations => {
       let hasNewVideo = false;
@@ -5075,8 +6550,8 @@
           if (t instanceof Element
             && !t.closest?.("video, audio, svg, button")
             && (t instanceof HTMLImageElement
-              || t.closest?.("article, [role='dialog']")
-              || t.querySelector?.(".ignow-image-download-btn"))) {
+              || t.closest?.(".ignow-image-host")
+              || Boolean(t.querySelector?.("img, .ignow-image-download-btn")))) {
             markDirtyImageStagesIn(t);
             relevant = true;
           }
@@ -5091,7 +6566,8 @@
           if (!hasRelevantSubtree(node)) continue;
           relevant = true;
           queueImagesInNode(node);
-          if (node.matches?.("video") || node.querySelector?.("video")) {
+          const hasVideo = node instanceof HTMLVideoElement || Boolean(node.querySelector?.("video"));
+          if (hasVideo) {
             hasNewVideo = true;
             markDirtyImageStagesIn(node.parentElement || mutation.target);
           }
@@ -5099,9 +6575,9 @@
         for (let i = 0; i < mutation.removedNodes.length; i += 1) {
           const node = mutation.removedNodes[i];
           if (!(node instanceof Element)) continue;
-          if (node.matches?.(".ignow-sidebar-back, .ignow-sidebar-forward, .ignow-sidebar-downloader")) {
+          if (node.matches?.(".ignow-sidebar-back, .ignow-sidebar-forward, .ignow-sidebar-downloader, .ignow-note-clip-btn")) {
             relevant = true;
-          } else if (!isOwnNode(node) && (node.matches?.("video, img, [role='dialog']") || node.querySelector?.("video, img"))) {
+          } else if (!isOwnNode(node) && (node.matches?.("video, img, [role='dialog'], [aria-label='Remove song']") || node.querySelector?.("video, img, [aria-label='Remove song']"))) {
             relevant = true;
             markDirtyImageStagesIn(mutation.target);
             queueDetachedVideosInNode(node);
@@ -5149,7 +6625,11 @@
     }, true);
     document.addEventListener("load", event => {
       if (event.target instanceof HTMLImageElement) {
-        pendingImages.add(event.target);
+        const img = event.target;
+        if (img.getAttribute("aria-hidden") === "true" || img.src?.startsWith("data:")) return;
+        if (img.naturalWidth > 0 && (img.naturalWidth < 120 || img.naturalHeight < 120)) return;
+        if (img.closest("header, nav, aside, .ignow-video-controls, .ignow-media-viewer, #__ignow_about")) return;
+        pendingImages.add(img);
         scheduleScan();
       } else if (event.target instanceof HTMLLinkElement && event.target.rel?.toLowerCase() === "stylesheet") {
         scheduleLinuxBlurScan(true);

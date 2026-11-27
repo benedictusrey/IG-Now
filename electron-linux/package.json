@@ -1,0 +1,78 @@
+{
+  "name": "ig-now-electron-linux",
+  "version": "2.5.3",
+  "description": "IG-Now Electron-for-Linux desktop client reusing ../frontend/",
+  "private": true,
+  "main": "main.js",
+  "desktopName": "ig-now.desktop",
+  "author": "Benedictus Reynaldo Hartanto (@benedictusrey)",
+  "homepage": "https://github.com/benedictusrey/IG-Now",
+  "license": "SEE LICENSE IN ../LICENSE",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test.cjs",
+    "dist": "electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "^45.5.0",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "com.ignow.desktop",
+    "productName": "IG-Now",
+    "executableName": "ig-now",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "backend.js",
+      "preload-instagram.js",
+      "preload-downloader.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../frontend",
+        "to": "frontend",
+        "filter": [
+          "**/*",
+          "!**/*.test.*"
+        ]
+      },
+      {
+        "from": "../src-tauri/icons",
+        "to": "icons",
+        "filter": [
+          "32x32.png",
+          "64x64.png",
+          "128x128.png",
+          "128x128@2x.png",
+          "icon.png"
+        ]
+      }
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm"
+      ],
+      "syncDesktopName": true,
+      "icon": "../src-tauri/icons/128x128@2x.png",
+      "category": "Network;InstantMessaging;",
+      "maintainer": "Benedictus Reynaldo Hartanto <benedictusrey@users.noreply.github.com>",
+      "synopsis": "IG-Now Desktop Application",
+      "description": "IG-Now is a high-performance cross-platform desktop application for Instagram."
+    },
+    "appImage": {
+      "artifactName": "IG-Now_${version}_amd64.AppImage"
+    },
+    "deb": {
+      "artifactName": "IG-Now_${version}_amd64.deb"
+    },
+    "rpm": {
+      "artifactName": "IG-Now-${version}-1.x86_64.rpm"
+    }
+  }
+}

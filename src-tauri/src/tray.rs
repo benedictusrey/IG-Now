@@ -109,6 +109,9 @@ const MENU_LAYOUT: &[MenuRow] = &[
         "how_to",
         "How to IG-Now",
         &[
+            #[cfg(target_os = "macos")]
+            MenuRow::Hint("usage_zoom", "Image zoom: Cmd + Left-click any photo"),
+            #[cfg(not(target_os = "macos"))]
             MenuRow::Hint("usage_zoom", "Image zoom: Ctrl + Left-click any photo"),
             MenuRow::Hint("usage_save", "Quick save: Right-click photo or video"),
             MenuRow::Hint(
@@ -345,7 +348,7 @@ fn sync_menu_state_to_reality(
 /// In-page About overlay for the Instagram window:
 /// a seamless dialog rendered INSIDE the page (no separate window hop). The
 /// `__VERSION__` placeholder is replaced with the real package version.
-const ABOUT_JS: &str = r##"(function() {
+pub(crate) const ABOUT_JS: &str = r##"(function() {
   var ID = '__ignow_about';
   var STYLE_ID = '__ignow_about_style';
   var old = document.getElementById(ID);
@@ -398,7 +401,7 @@ const ABOUT_JS: &str = r##"(function() {
     '#' + ID + ' .ignow-ab-kbd{background:#0b0c0f;border:1px solid rgba(255,255,255,0.17);border-radius:4px;padding:1px 6px;' +
     'color:#f4f5f7;font:500 12px/1.3 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}' +
     '@media (max-width:520px){#' + ID + ' .ignow-ab-grid{grid-template-columns:1fr;}}' +
-    '@media (prefers-reduced-motion:reduce){#' + ID + ',#' + ID + '_card,#' + ID + ' .ignow-ab-btn{transition:none!important;}}';
+    '@media (prefers-reduced-motion:reduce){#' + ID + ',#' + ID + '_card,#' + ID + ' .ignow-ab-btn,#' + ID + ' .ignow-ab-ver{transition:none!important;}}';
   (document.head || document.documentElement).appendChild(styleEl);
 
   var previousFocus = document.activeElement;
@@ -543,12 +546,13 @@ const ABOUT_JS: &str = r##"(function() {
     'display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;padding:10px 12px;' +
     'border-radius:8px;background:#16181f;border:1px solid rgba(255,255,255,0.08);' +
     'font-size:12px;line-height:1.4;color:#a4aab6;');
+  var isMac = /Mac|iPhone|iPad|iPod/i.test(navigator.platform || (navigator.userAgentData && navigator.userAgentData.platform) || '');
   keysStrip.innerHTML =
     '<span><kbd class="ignow-ab-kbd">Esc</kbd> Back / close</span>' +
     '<span><kbd class="ignow-ab-kbd">&larr; &rarr;</kbd> Seek &plusmn;5s</span>' +
     '<span><kbd class="ignow-ab-kbd">&uarr; &darr;</kbd> Prev / next reel</span>' +
     '<span><kbd class="ignow-ab-kbd">Alt+&larr;</kbd> History back</span>' +
-    '<span><kbd class="ignow-ab-kbd">Ctrl+Click</kbd> Zoom image</span>';
+    '<span><kbd class="ignow-ab-kbd">' + (isMac ? 'Cmd+Click' : 'Ctrl+Click') + '</kbd> Zoom image</span>';
   body.appendChild(keysStrip);
 
   var footer = el('div',
@@ -660,7 +664,7 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         .icon(icon)
         .menu(&menu)
         .tooltip(concat!("IG-Now Desktop v", env!("CARGO_PKG_VERSION")))
-        .show_menu_on_left_click(false)
+        .show_menu_on_left_click(cfg!(target_os = "macos"))
         .on_menu_event(move |app, event| match event.id.as_ref() {
             "show_hide" => toggle_show_hide(app),
             "ig_home" => navigate(app, "/"),
@@ -808,16 +812,18 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn Error>> {
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } = event
-            {
-                // Same restore-vs-hide rule as the Show/Hide menu item:
-                // minimized OR hidden OR unfocused -> restore to the front;
-                // visible AND focused -> hide to the tray (pause first).
-                toggle_show_hide(&tray.app_handle());
+            if !cfg!(target_os = "macos") {
+                if let TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } = event
+                {
+                    // Same restore-vs-hide rule as the Show/Hide menu item:
+                    // minimized OR hidden OR unfocused -> restore to the front;
+                    // visible AND focused -> hide to the tray (pause first).
+                    toggle_show_hide(&tray.app_handle());
+                }
             }
         })
         .build(app)?;

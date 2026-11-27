@@ -1,13 +1,31 @@
 {
   "product": "IG-Now",
   "repository": "https://github.com/benedictusrey/IG-Now",
-  "latest": "2.5.2",
+  "latest": "2.5.3",
   "versions": [
+    {
+      "version": "2.5.3",
+      "tag": "v2.5.3",
+      "date": "2026-11-27",
+      "status": "current",
+      "releaseUrl": "https://github.com/benedictusrey/IG-Now/releases/tag/v2.5.3",
+      "highlights": [
+        "Instagram Notes music clip waveform selector (issue #8) in frontend/instagram-tools.js with adjustable 5s-30s clip window, live preview, and music_note_create_info start_time/duration patching",
+        "Electron-for-Linux release client (electron-linux/) packaging AppImage, deb, and rpm while reusing frontend/ directly",
+        "Cross-platform codec-aware DASH selection (avc1 > hev1/hvc1 > vp09 > av01; mp4a > opus), H.264+AAC MP4 normalization, and magic-byte PNG/JPG/GIF image normalization",
+        "macOS Dock reopen (RunEvent::Reopen), left-click menu-bar tray, Cmd+Click zoom & Cmd shortcut hints, and cross-platform DM link font stack"
+      ],
+      "documents": {
+        "releaseNotes": "RELEASE_NOTES.md",
+        "changelog": "CHANGELOG.md"
+      },
+      "localBinaries": "releases/versions/v2.5.3/binaries/"
+    },
     {
       "version": "2.5.2",
       "tag": "v2.5.2",
       "date": "2026-11-26",
-      "status": "current",
+      "status": "published",
       "releaseUrl": "https://github.com/benedictusrey/IG-Now/releases/tag/v2.5.2",
       "highlights": [
         "Linux WebKitGTK & Wayland/XWayland overhaul (PR #7 / issue #6 follow-up): DRI3 DMA-BUF probing, pre-navigation CacheModel::WebBrowser + smooth scrolling, Skia CPU thread/vblank tuning, and event-driven tray/focus playback resume",

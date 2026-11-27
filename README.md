@@ -6,21 +6,21 @@
 
 <p align="center">
   <strong>A high-performance, cross-platform desktop client for <a href="https://instagram.com">Instagram</a></strong><br/>
-  Built with <a href="https://tauri.app">Tauri v2</a> + Rust · WebView2 · WebKit
+  Built with <a href="https://tauri.app">Tauri v2</a> + Rust (Windows &amp; macOS) · <a href="https://www.electronjs.org">Electron</a> (Linux)
 </p>
 
 <p align="center">
-  <strong>🎉 v2.5.2 IS NOW LIVE! 🎉</strong><br/>
-  <em>Linux WebKitGTK &amp; Wayland/XWayland performance overhaul (issue #6, ~50% lower Reels memory &amp; sub-17ms scroll pacing) · Lazy Reels controls &amp; off-route decoder cleanup · Core Audio COM &amp; atomic Downloader hardening · Keyboard &amp; focus accessibility polish</em>
+  <strong>🎉 v2.5.3 IS NOW LIVE! 🎉</strong><br/>
+  <em>Electron-for-Linux desktop packages (.AppImage, .deb, .rpm) · Instagram Notes music clip waveform selector (issue #8) · Cross-platform H.264+AAC .mp4 &amp; lossless/alpha .png/.jpg normalization · Codec-aware DASH selection · macOS Dock reopen &amp; Cmd shortcut parity</em>
 </p>
 
 <p align="center">
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-4285f4?style=flat-square&logo=windows&logoColor=white">
   <img alt="macOS" src="https://img.shields.io/badge/platform-macOS%20(Universal)-lightgrey?style=flat-square&logo=apple&logoColor=black">
-  <img alt="Linux" src="https://img.shields.io/badge/platform-Linux%20(Universal)-FCC624?style=flat-square&logo=linux&logoColor=black">
-  <img alt="Rust and Tauri 2" src="https://img.shields.io/badge/built%20with-Rust%20%2B%20Tauri%202-24C8DB?style=flat-square&logo=tauri&logoColor=white">
-  <img alt="WebView2 and WebKit" src="https://img.shields.io/badge/rendering-WebView2%20%2F%20WebKit-0078D4?style=flat-square&logo=microsoftedge&logoColor=white">
-  <img alt="Version 2.5.2" src="https://img.shields.io/badge/version-2.5.2-e1306c?style=flat-square">
+  <img alt="Linux" src="https://img.shields.io/badge/platform-Linux%20(Electron)-FCC624?style=flat-square&logo=linux&logoColor=black">
+  <img alt="Rust and Tauri 2" src="https://img.shields.io/badge/Windows%20%26%20macOS-Rust%20%2B%20Tauri%202-24C8DB?style=flat-square&logo=tauri&logoColor=white">
+  <img alt="Electron Linux" src="https://img.shields.io/badge/Linux-Electron-47848F?style=flat-square&logo=electron&logoColor=white">
+  <img alt="Version 2.5.3" src="https://img.shields.io/badge/version-2.5.3-e1306c?style=flat-square">
   <a href="https://github.com/benedictusrey"><img alt="Author" src="https://img.shields.io/badge/author-%40benedictusrey-black?style=flat-square&logo=github"/></a>
 </p>
 
@@ -31,7 +31,7 @@
 ## ✨ Desktop Showcase
 
 ### 1. Native Performance & Centered Desktop Experience
-Built on **Tauri v2 + Rust** (~7 MB binary, zero Electron overhead), IG-Now launches in a dark paint-ready frame sized at **`1588 × 1025`** centered on your active monitor work area. Instagram's official feed and original native **Comments** panel stay intact with zero overlapping action icons.
+Powered by **Tauri v2 + Rust** (~7 MB binary on Windows &amp; macOS) and **Electron-for-Linux** (`electron-linux/` with bundled Chromium media codecs on Linux), IG-Now launches in a dark paint-ready frame sized at **`1588 × 1025`** centered on your active monitor work area. Instagram's official feed and original native **Comments** panel stay intact with zero overlapping action icons.
 
 <p align="center">
   <img src="docs/assets/IG-Now%20hero.png" alt="IG-Now Desktop Experience Hero Showcase" width="100%"/>
@@ -64,16 +64,16 @@ Every video across Reels, the home feed, and Search hover previews gets native p
 
 ---
 
-## ⚔️ IG-Now v2.5.2 vs Instagram Web
+## ⚔️ IG-Now v2.5.3 vs Instagram Web
 
-| Capability | 🟣 IG-Now v2.5.2 | 🌐 Instagram Web |
+| Capability | 🟣 IG-Now v2.5.3 | 🌐 Instagram Web |
 |---|---|---|
 | **Tray & Window Lifecycle** | Dedicated centered `1588 × 1025` window, closes to tray, pauses/mutes on minimize | Lost in browser tabs; plays audio in background |
 | **OS Audio Mixer & Mute Sync** | Grouped `"IG-Now"` Windows session + two-way mute icon sync | Generic browser tab audio |
 | **Video Controls** | Click/drag seek bar on **all** videos + `-5s`/`+5s` + `⏮`/`⏭` + hover volume slider | Limited controls; locked on many feeds |
-| **Media & Carousel Saving** | `765 × 885` native Downloader (MP4 AAC, M4A, up-to-20 carousels, collab posts, captions) | Unavailable natively |
-| **Navigation & Comments** | Sidebar **Downloader**, **Forward**, **Back** + `Esc` pre-click return; original IG comments | Relies on full browser bar |
-| **Footprint & Launch** | ~7–9 MB native Tauri v2 binary, dark WebView2/WebKit reveal & DRI3-tuned Linux rendering | Heavy multi-process browser tabs |
+| **Media & Carousel Saving** | `765 × 885` native Downloader (H.264+AAC `.mp4`, `.m4a`, `.png`/`.jpg`/`.gif`, up-to-20 carousels, captions) | Unavailable natively |
+| **Navigation & Comments** | Sidebar **Downloader**, **Forward**, **Back** + `Esc` pre-click return; Notes music clip waveform selector; original IG comments | Relies on full browser bar; fixed music clip start |
+| **Footprint & Launch** | ~7–9 MB native Tauri v2 (Windows/macOS) + hardware-ready Electron host (Linux) | Heavy multi-process browser tabs |
 
 ---
 
@@ -83,24 +83,27 @@ Pre-built universal packages and SHA-256 manifests (`checksums.txt`, `SHA256SUMS
 
 | Platform | Package / Installer | Architecture & Runtime Notes |
 |---|---|---|
-| **Windows 10 / 11** | `IG-Now_2.5.2_x64-setup.exe` / `IG-Now_2.5.2_x64_en-US.msi` | x64; auto-offers [Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) if missing |
-| **macOS 10.15+** | `IG-Now_2.5.2_universal.dmg` / `.app.tar.gz` | Universal (`arm64` Apple Silicon + `x86_64` Intel); first run: right-click → **Open** |
-| **Linux (Universal)** | `IG-Now_2.5.2_amd64.AppImage` | Portable x64 binary (`chmod +x` then run; requires `libwebkit2gtk-4.1` &amp; GStreamer plugins) |
-| **Linux (Packages)** | `IG-Now_2.5.2_amd64.deb` / `.rpm` | `sudo apt install ./IG-Now_2.5.2_amd64.deb` or `sudo dnf install ./IG-Now_2.5.2_x86_64.rpm` |
+| **Windows 10 / 11** | `IG-Now_2.5.3_x64-setup.exe` / `IG-Now_2.5.3_x64_en-US.msi` | x64 Tauri v2; auto-offers [Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) if missing |
+| **macOS 10.15+** | `IG-Now_2.5.3_universal.dmg` / `.app.tar.gz` | Universal Tauri v2 (`arm64` Apple Silicon + `x86_64` Intel); first run: right-click → **Open** |
+| **Linux (Universal)** | `IG-Now_2.5.3_amd64.AppImage` | Portable Electron-for-Linux x64 binary (`chmod +x` then run) |
+| **Linux (Packages)** | `IG-Now_2.5.3_amd64.deb` / `IG-Now-2.5.3-1.x86_64.rpm` | `sudo apt install ./IG-Now_2.5.3_amd64.deb` or `sudo dnf install ./IG-Now-2.5.3-1.x86_64.rpm` |
 
-*Downloads save to `Downloads/IG-Now`. Optional `ffmpeg` on `PATH` unlocks DASH H.264+AAC `.mp4` muxing and `.m4a` extraction (progressive `.mp4` and full-res images work without it).*
+*Downloads save to `Downloads/IG-Now`. Optional `ffmpeg` on `PATH` unlocks DASH H.264+AAC `.mp4` muxing, incompatible video/audio transcoding, WebP/AVIF/HEIC conversion, and `.m4a` extraction (compatible `.mp4` and JPEG/PNG/GIF images work without it).*
 
 ---
 
 ## 🔒 Privacy, Building & License
 
-- **Local & Private:** Credentials and cookies live strictly inside your OS webview profile with zero analytics, zero external APIs, and HTTP(S)-validated external links; see [SECURITY.md](SECURITY.md).
+- **Local & Private:** Credentials and cookies live strictly inside your OS webview/app profile with zero analytics, zero external APIs, and HTTP(S)-validated external links; see [SECURITY.md](SECURITY.md).
 - **Build from Source:** Requires [Rust](https://rustup.rs/) + [Node.js](https://nodejs.org/) (plus platform prerequisites in [CONTRIBUTING.md](CONTRIBUTING.md)):
   ```bash
   npm ci && npm test
   node --check frontend/instagram-tools.js && node --check frontend/direct-messages.js && node --check frontend/downloader.js
   cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
   cargo test --manifest-path src-tauri/Cargo.toml --locked --lib
+  # Windows / macOS:
   npx tauri build
+  # Linux (Electron-for-Linux):
+  cd electron-linux && npm ci && npm test && npm run dist
   ```
 - **Author & License:** Conceived, designed, engineered, and maintained solely by **Benedictus Reynaldo Hartanto** ([@benedictusrey](https://github.com/benedictusrey)). Licensed under the **IG-Now Source & Contribution License** (Anti-Rebranding Clause applies — preserve author credits and cite [benedictusrey/IG-Now](https://github.com/benedictusrey/IG-Now); see [LICENSE](LICENSE)).
